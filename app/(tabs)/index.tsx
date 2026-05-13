@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
     Alert,
     FlatList,
+    Image, // Adicionado para as capas
     ImageBackground,
     Modal,
     Platform,
@@ -29,765 +30,422 @@ type ReplayVideo = {
   arena: string;
   user_id?: string | number | null;
   likes: number;
+  thumbnail_url?: string; // Adicionado para suportar as capas do banco
 };
 
 // --- COMPONENTE ISOLADO DE VÍDEO NATIVO (EXPO-VIDEO) ---
 const NativeVideoPlayer = ({ videoUrl, onFinish, onFullscreenChange }: { videoUrl: string, onFinish: () => void, onFullscreenChange: (isFullscreen: boolean) => void }) => {
   const player = useVideoPlayer(videoUrl, player => {
     player.loop = false;
-    player.play(); // Inicia automaticamente
+    player.play(); 
   });
 
-  // Monitora o estado da reprodução
   useEffect(() => {
-          const subscription = player.addListener('statusChange', (event) => {
-            // Quando o status mudar para um estado de finalização (depende da API exata do expo-video, usamos timeUpdate ou fim do fluxo)
-            if (event.status === 'readyToPlay' || event.status === 'playing' || event.status === 'paused' || event.status === 'idle' || event.status === 'error') {
-               // o expo-video gerencia o 'fim' de forma mais interna, se precisar forçar o fim:
-            }
-          });
-    
-    // Fallback: usar onStatusChange ou algo similar
-     const playEndSub = player.addListener('playToEnd', () => {
-         onFinish();
-     });
-
+    const subscription = player.addListener('playToEnd', () => {
+      onFinish();
+    });
     return () => {
-        playEndSub.remove();
-        subscription.remove();
+      subscription.remove();
     };
   }, [player]);
 
   return (
     <VideoView
-      style={styles.videoPlayer}
       player={player}
-      fullscreenOptions={{ presentation: 'fullscreen' }}
+      style={styles.videoPlayer}
+      allowsFullscreen
       allowsPictureInPicture
-      nativeControls
-      // Expo-Video 50+ lida com tela cheia de forma integrada.
-      // Se precisar forçar a rotação, pode ser feito monitorando as dimensões ou usando métodos nativos se expostos no futuro.
     />
   );
 };
 
-
 export default function HomeScreen() {
   const [replays, setReplays] = useState<ReplayVideo[]>([]);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [videoSelecionado, setVideoSelecionado] = useState<ReplayVideo | null>(
-    null,
-  );
-  const [isLiveSelecionada, setIsLiveSelecionada] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchText, setSearchText] = useState("");
-  const [arenaSelecionada, setArenaSelecionada] = useState("Todas");
-  const arenas = [
-    "Todas",
-    "Campo Society",
-    "Futsal",
-    "Estádio Municipal",
-    "Vôlei",
-  ];
   const [refreshing, setRefreshing] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
-  const [videoStep, setVideoStep] = useState<
-    "closed" | "intro" | "playing" | "outro"
-  >("closed");
-  const [liveId] = useState("cXr5JRHDRXk");
+  const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
+  const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
+  const [commentText, setCommentText] = useState("");
+  const [comments, setComments] = useState<{ [key: string]: string[] }>({});
+  const [showBumper, setShowBumper] = useState(false);
 
+  // Carregar curtidas e comentários do storage local
   useEffect(() => {
-    carregarVideos();
+    const loadPersistedData = async () => {
+      try {
+        const [savedLikes, savedComments] = await Promise.all([
+          AsyncStorage.getItem("@liked_videos"),
+          AsyncStorage.getItem("@video_comments"),
+        ]);
+        if (savedLikes) setLikedVideos(new Set(JSON.parse(savedLikes)));
+        if (savedComments) setComments(JSON.parse(savedComments));
+      } catch (e) {
+        console.error("Erro ao carregar dados locais", e);
+      }
+    };
+    loadPersistedData();
+    carregarDados();
   }, []);
 
-  const carregarVideos = async () => {
-    const data = await getReplays();
-    const videosComLikes = data.map((v: any) => ({
-      ...v,
-      likes: v.likes || 0,
-    }));
-    setReplays(videosComLikes);
+  const carregarDados = async () => {
+    try {
+      const dados = await getReplays();
+      setReplays(dados);
+    } catch (error) {
+      console.error("Erro ao carregar replays:", error);
+    }
   };
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await carregarVideos();
+    await carregarDados();
     setRefreshing(false);
   }, []);
 
-  const formatarTitulo = (filename: string) => {
-    if (filename.startsWith("replayflix_")) return "Lance Oficial";
-    if (filename.startsWith("varplay_")) return "Lance Antigo";
-    if (filename.startsWith("replay_")) return "Lance Oficial";
-    return filename.replace(".mp4", "");
+  const toggleLike = async (id: string) => {
+    const newLiked = new Set(likedVideos);
+    if (newLiked.has(id)) newLiked.delete(id);
+    else newLiked.add(id);
+    
+    setLikedVideos(newLiked);
+    await AsyncStorage.setItem("@liked_videos", JSON.stringify([...newLiked]));
   };
 
-  const abrirVideo = async (video: ReplayVideo) => {
-    setIsLiveSelecionada(false);
-    setVideoSelecionado(video);
-    setModalVisible(true);
-    setVideoStep("intro");
-    setIsSearching(false);
-    setSearchText("");
-
-    const userId = (await AsyncStorage.getItem("userId")) || "guest";
-    const liked = await AsyncStorage.getItem(
-      `liked_${userId}_${video.filename}`,
-    );
-    const saved = await AsyncStorage.getItem(
-      `saved_${userId}_${video.filename}`,
-    );
-    setIsLiked(liked === "true");
-    setIsSaved(saved === "true");
-    setTimeout(() => {
-      setVideoStep((prev) => (prev === "intro" ? "playing" : prev));
-    }, 1200);
+  const addComment = async () => {
+    if (!selectedVideo || !commentText.trim()) return;
+    const videoId = selectedVideo.id;
+    const newComments = {
+      ...comments,
+      [videoId]: [...(comments[videoId] || []), commentText.trim()],
+    };
+    setComments(newComments);
+    setCommentText("");
+    await AsyncStorage.setItem("@video_comments", JSON.stringify(newComments));
   };
 
-  const abrirLive = () => {
-    setIsLiveSelecionada(true);
-    setVideoSelecionado({
-      id: "live",
-      filename: "Transmissão ao Vivo",
-      arena: "Arena Principal",
-      likes: 0,
-      size: "0MB",
-      created_at: new Date().toISOString(),
-    });
-    setModalVisible(true);
-    setVideoStep("intro");
-    setIsSearching(false);
-    setSearchText("");
-    setTimeout(() => {
-      setVideoStep("playing");
-    }, 1200);
+  const handleVideoSelect = (video: ReplayVideo) => {
+    setSelectedVideo(video);
+    setShowBumper(true);
+    setTimeout(() => setShowBumper(false), 2500); // Tempo da intro
   };
 
-  const fecharVideo = async () => {
-    setVideoStep("closed");
-    setModalVisible(false);
-    setVideoSelecionado(null);
-    setIsLiveSelecionada(false);
-    if (Platform.OS !== "web") {
-      await ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP,
-      );
-    }
-    carregarVideos();
-  };
-
-  const getVideoUrl = (filename: string) =>
-    `https://replayflix-backend.onrender.com/api/replays/${encodeURIComponent(
-      filename.replace(".mp4", ""),
-    )}/stream`;
-
-  const getThumbnailUrl = (filename: string) =>
-    `https://replayflix-backend.onrender.com/api/replays/${encodeURIComponent(filename)}/thumbnail`;
-
-  const handleLike = async () => {
-    if (!videoSelecionado) return;
-    const userId = (await AsyncStorage.getItem("userId")) || "guest";
-    if (isLiked) {
-      setIsLiked(false);
-      setVideoSelecionado({
-        ...videoSelecionado,
-        likes: Math.max(0, videoSelecionado.likes - 1),
-      });
-      await AsyncStorage.removeItem(
-        `liked_${userId}_${videoSelecionado.filename}`,
-      );
-      try {
-        await fetch(
-          `https://replayflix-backend.onrender.com/api/replays/${videoSelecionado.filename}/unlike`,
-          { method: "POST" },
-        );
-      } catch {}
-    } else {
-      setIsLiked(true);
-      setVideoSelecionado({
-        ...videoSelecionado,
-        likes: videoSelecionado.likes + 1,
-      });
-      await AsyncStorage.setItem(
-        `liked_${userId}_${videoSelecionado.filename}`,
-        "true",
-      );
-      try {
-        await fetch(
-          `https://replayflix-backend.onrender.com/api/replays/${videoSelecionado.filename}/like`,
-          {
-            method: "POST",
-          },
-        );
-      } catch {}
-    }
-  };
-
-  const reivindicarLance = async () => {
-    if (!videoSelecionado) return;
-    const userId = await AsyncStorage.getItem("userId");
-    if (!userId) {
-      Alert.alert("Atenção", "Você precisa estar logado para salvar lances.");
-      return;
-    }
-    if (isSaved) {
-      setIsSaved(false);
-      await AsyncStorage.removeItem(
-        `saved_${userId}_${videoSelecionado.filename}`,
-      );
-      try {
-        await fetch(
-          `https://replayflix-backend.onrender.com/api/replays/${videoSelecionado.filename}/vincular`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: null }),
-          },
-        );
-      } catch {}
-    } else {
-      setIsSaved(true);
-      await AsyncStorage.setItem(
-        `saved_${userId}_${videoSelecionado.filename}`,
-        "true",
-      );
-      try {
-        await fetch(
-          `https://replayflix-backend.onrender.com/api/replays/${videoSelecionado.filename}/vincular`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: userId }),
-          },
-        );
-      } catch {}
-    }
-  };
-
-  const videosFiltrados = replays.filter((video) => {
-    const matchBusca = formatarTitulo(video.filename)
-      .toLowerCase()
-      .includes(searchText.toLowerCase());
-    const matchArena =
-      arenaSelecionada === "Todas" || video.arena === arenaSelecionada;
-    return matchBusca && matchArena;
-  });
-
-  const renderLiveCard = () => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.8}
-      onPress={abrirLive}
+  const renderItem = ({ item }: { item: ReplayVideo }) => (
+    <TouchableOpacity 
+      style={styles.videoCard} 
+      onPress={() => handleVideoSelect(item)}
     >
-      <ImageBackground
-        source={{
-          uri: "https://images.unsplash.com/photo-1526676037777-05a232554f77?q=80&w=300",
-        }}
-        style={styles.thumbnail}
-        imageStyle={{ borderRadius: 12 }}
-      >
-        <View
-          style={[styles.overlay, { backgroundColor: "rgba(211, 0, 0, 0.2)" }]}
-        >
-          <View style={styles.liveBadgeMini}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveTextMini}>AO VIVO</Text>
-          </View>
-          <View style={styles.playButton}>
-            <Ionicons name="radio" size={24} color="#FFF" />
-          </View>
-        </View>
-        <View style={styles.cardTitleContainer}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            Arena Principal
-          </Text>
-        </View>
-      </ImageBackground>
-    </TouchableOpacity>
-  );
-
-  const renderCard = ({ item }: { item: ReplayVideo }) => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.8}
-      onPress={() => abrirVideo(item)}
-    >
-      <ImageBackground
-        source={{ uri: getThumbnailUrl(item.filename) }}
-        style={styles.thumbnail}
-        imageStyle={{ borderRadius: 12 }}
-      >
-        <View style={styles.overlay}>
-          <View style={styles.playButton}>
-            <Ionicons
-              name="play"
-              size={24}
-              color="#FFF"
-              style={{ marginLeft: 3 }}
-            />
-          </View>
-        </View>
-        <View style={styles.cardTitleContainer}>
-          <Text style={styles.cardTitle} numberOfLines={1}>
-            {formatarTitulo(item.filename)}
-          </Text>
-        </View>
-      </ImageBackground>
-    </TouchableOpacity>
-  );
-
-  const renderCarousel = (title: string, data: ReplayVideo[]) => {
-    if (data.length === 0) return null;
-    return (
-      <View style={styles.carouselSection}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        <FlatList
-          horizontal
-          data={data}
-          keyExtractor={(item, index) => item.filename + index}
-          showsHorizontalScrollIndicator={false}
-          renderItem={renderCard}
-          contentContainerStyle={{ paddingHorizontal: 20 }}
-          snapToInterval={175}
-          snapToAlignment="start"
-          decelerationRate="fast"
-        />
-      </View>
-    );
-  };
-
-  return (
-    <View style={styles.pageBackground}>
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
-        <View style={styles.header}>
-          {!isSearching ? (
-            <Text style={styles.headerTitle}>
-              Replay<Text style={styles.headerHighlight}>Flix</Text>
-            </Text>
-          ) : (
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar lance..."
-              placeholderTextColor="#888"
-              value={searchText}
-              onChangeText={setSearchText}
-              autoFocus
-            />
-          )}
-          <TouchableOpacity
-            onPress={() => {
-              setIsSearching(!isSearching);
-              setSearchText("");
-            }}
-          >
-            <Ionicons
-              name={isSearching ? "close" : "search"}
-              size={26}
-              color="#FFF"
-            />
-          </TouchableOpacity>
-        </View>
-
-        {!isSearching && (
-          <View style={styles.chipsContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 20 }}
-            >
-              {arenas.map((arena) => (
-                <TouchableOpacity
-                  key={arena}
-                  style={[
-                    styles.chip,
-                    arenaSelecionada === arena && styles.chipActive,
-                  ]}
-                  onPress={() => setArenaSelecionada(arena)}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.chipText,
-                      arenaSelecionada === arena && styles.chipTextActive,
-                    ]}
-                  >
-                    {arena}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+      <View style={styles.thumbnailContainer}>
+        {item.thumbnail_url ? (
+          <Image 
+            source={{ uri: item.thumbnail_url }} 
+            style={styles.thumbnailImage} 
+          />
+        ) : (
+          <View style={styles.thumbnailPlaceholder}>
+            <Ionicons name="play-circle" size={32} color="#333" />
           </View>
         )}
-
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 40 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#D30000"
-              colors={["#D30000"]}
-              progressBackgroundColor="#1A1A1A"
-            />
-          }
-        >
-          {!isSearching && (
-            <View style={styles.heroSection}>
-              <Text style={styles.heroText}>BEM-VINDO À ARENA</Text>
-            </View>
-          )}
-
-          <View style={styles.carouselSection}>
-            <Text style={styles.sectionTitle}>AO VIVO AGORA</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 20 }}
-              snapToInterval={175}
-              snapToAlignment="start"
-              decelerationRate="fast"
-            >
-              {renderLiveCard()}
-            </ScrollView>
-          </View>
-
-          {renderCarousel("MAIS RECENTES", videosFiltrados)}
-          {renderCarousel(
-            "GOLAÇOS DA SEMANA",
-            videosFiltrados.slice().reverse(),
-          )}
-
-          {videosFiltrados.length === 0 && (
-            <Text
-              style={{ color: "#666", textAlign: "center", marginTop: 50 }}
-            >{`Nenhum lance encontrado.`}</Text>
-          )}
-        </ScrollView>
       </View>
 
+      <View style={styles.videoInfo}>
+        <Text style={styles.videoTitle} numberOfLines={1}>
+          {item.filename.replace('.mp4', '')}
+        </Text>
+        <Text style={styles.videoSub}>{item.arena} • {item.size}</Text>
+        
+        <View style={styles.actionsRow}>
+          <TouchableOpacity onPress={() => toggleLike(item.id)} style={styles.iconAction}>
+            <Ionicons 
+              name={likedVideos.has(item.id) ? "heart" : "heart-outline"} 
+              size={18} 
+              color={likedVideos.has(item.id) ? "#D30000" : "#888"} 
+            />
+            <Text style={styles.actionText}>{item.likes + (likedVideos.has(item.id) ? 1 : 0)}</Text>
+          </TouchableOpacity>
+          
+          <View style={styles.iconAction}>
+            <Ionicons name="chatbubble-outline" size={16} color="#888" />
+            <Text style={styles.actionText}>{(comments[item.id] || []).length}</Text>
+          </View>
+        </View>
+      </View>
+      
+      <Ionicons name="chevron-forward" size={20} color="#222" />
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.headerTitle}>REPLAY<Text style={styles.highlight}>FLIX</Text></Text>
+          <Text style={styles.headerSub}>Sua partida, seu show.</Text>
+        </View>
+        <TouchableOpacity style={styles.profileBtn}>
+           <Ionicons name="person-circle-outline" size={32} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={replays}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="videocam-off-outline" size={60} color="#222" />
+            <Text style={styles.emptyText}>Nenhum replay disponível no momento.</Text>
+          </View>
+        }
+      />
+
       <Modal
-        animationType="fade"
+        visible={!!selectedVideo}
         transparent
-        visible={modalVisible}
-        onRequestClose={fecharVideo}
+        animationType="slide"
+        onRequestClose={() => setSelectedVideo(null)}
       >
-        <TouchableOpacity
-          style={styles.modalVideoOverlay}
-          activeOpacity={1}
-          onPress={fecharVideo}
-        >
+        <View style={styles.modalVideoOverlay}>
           <View style={styles.modalVideoHeader}>
-            <TouchableOpacity style={styles.closeButton} onPress={fecharVideo}>
-              <Ionicons name="close-circle" size={36} color="#FFF" />
+             <Text style={styles.modalTitle} numberOfLines={1}>{selectedVideo?.filename}</Text>
+            <TouchableOpacity onPress={() => setSelectedVideo(null)}>
+              <Ionicons name="close-circle" size={40} color="#FFF" />
             </TouchableOpacity>
           </View>
 
-          {videoSelecionado && (
-            <TouchableOpacity
-              activeOpacity={1}
-              style={styles.modalVideoWrapper}
-            >
-              {videoStep === "intro" || videoStep === "outro" ? (
+          <View style={styles.modalContentScroll}>
+            <View style={styles.modalVideoWrapper}>
+              {showBumper ? (
                 <View style={styles.bumperContainer}>
-                  <Text style={styles.bumperLogo}>
-                    Replay<Text style={styles.bumperHighlight}>Flix</Text>
-                  </Text>
+                  <Text style={styles.bumperLogo}>REPLAY<Text style={styles.bumperHighlight}>FLIX</Text></Text>
+                  <Text style={styles.bumperSub}>Preparando seu lance...</Text>
                 </View>
               ) : (
                 <View style={styles.videoBox}>
-                  {isLiveSelecionada ? (
-                    <YoutubePlayer height={250} play videoId={liveId} />
-                  ) : Platform.OS === "web" ? (
-                    // @ts-ignore
-                    React.createElement("video", {
-                      src: getVideoUrl(videoSelecionado.filename),
-                      style: {
-                        width: "100%",
-                        height: "100%",
-                        backgroundColor: "#000",
-                        objectFit: "contain",
-                      },
-                      controls: true,
-                      autoPlay: true,
-                      onEnded: () => {
-                        setVideoStep("outro");
-                        setTimeout(() => fecharVideo(), 1200);
-                      },
-                    })
-                  ) : (
-                    // Injeção do Novo Componente de Vídeo
+                  {selectedVideo && (
                     <NativeVideoPlayer 
-                        videoUrl={getVideoUrl(videoSelecionado.filename)}
-                        onFinish={() => {
-                            setVideoStep("outro");
-                            setTimeout(() => fecharVideo(), 1200);
-                        }}
-                        onFullscreenChange={async (isFullscreen) => {
-                             if (isFullscreen) {
-                                await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-                             } else {
-                                await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-                             }
-                        }}
+                      videoUrl={`https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
+                      onFinish={() => {}}
+                      onFullscreenChange={async (fs) => {
+                         if(fs) await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+                         else await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+                      }}
                     />
                   )}
                 </View>
               )}
+            </View>
 
-              {videoStep === "playing" && !isLiveSelecionada && (
-                <View style={styles.videoFooterBar}>
-                  <Text style={styles.likesCounterText}>
-                    {videoSelecionado.likes === 0
-                      ? "0 Likes"
-                      : videoSelecionado.likes === 1
-                        ? "1 Like"
-                        : `${videoSelecionado.likes} Likes`}
-                  </Text>
+            <ScrollView style={styles.detailsArea}>
+              <View style={styles.videoStatsBar}>
+                 <TouchableOpacity style={styles.statItem} onPress={() => selectedVideo && toggleLike(selectedVideo.id)}>
+                    <Ionicons name={selectedVideo && likedVideos.has(selectedVideo.id) ? "heart" : "heart-outline"} size={24} color="#D30000" />
+                    <Text style={styles.statText}>Curtir</Text>
+                 </TouchableOpacity>
+                 <View style={styles.statItem}>
+                    <Ionicons name="share-social-outline" size={24} color="#FFF" />
+                    <Text style={styles.statText}>Compartilhar</Text>
+                 </View>
+                 <View style={styles.statItem}>
+                    <Ionicons name="cloud-download-outline" size={24} color="#FFF" />
+                    <Text style={styles.statText}>Baixar</Text>
+                 </View>
+              </View>
 
-                  <View style={styles.actionsContainer}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={handleLike}
-                      activeOpacity={0.6}
-                    >
-                      <Ionicons
-                        name={isLiked ? "thumbs-up" : "thumbs-up-outline"}
-                        size={26}
-                        color="#FFF"
-                      />
-                    </TouchableOpacity>
-
-                    <View style={styles.actionDivider} />
-
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={reivindicarLance}
-                      activeOpacity={0.6}
-                    >
-                      <Ionicons
-                        name={isSaved ? "star" : "star-outline"}
-                        size={28}
-                        color="#FFF"
-                      />
-                    </TouchableOpacity>
-                  </View>
+              <View style={styles.commentSection}>
+                <Text style={styles.sectionTitle}>Comentários ({(selectedVideo && comments[selectedVideo.id] || []).length})</Text>
+                
+                <View style={styles.inputRow}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Escreva algo sobre esse lance..."
+                    placeholderTextColor="#555"
+                    value={commentText}
+                    onChangeText={setCommentText}
+                  />
+                  <TouchableOpacity style={styles.sendBtn} onPress={addComment}>
+                    <Ionicons name="send" size={20} color="#FFF" />
+                  </TouchableOpacity>
                 </View>
-              )}
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
+
+                {selectedVideo && (comments[selectedVideo.id] || []).map((c, i) => (
+                  <View key={i} style={styles.commentItem}>
+                    <View style={styles.avatarMini} />
+                    <View>
+                      <Text style={styles.commentUser}>Craque Anônimo</Text>
+                      <Text style={styles.commentText}>{c}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pageBackground: { flex: 1, backgroundColor: "#000" },
-  container: {
-    flex: 1,
-    backgroundColor: "#111",
-    width: "100%",
-    maxWidth: 1000,
-    alignSelf: "center",
-  },
+  container: { flex: 1, backgroundColor: "#000" },
   header: {
+    paddingTop: 60,
+    paddingHorizontal: 25,
+    paddingBottom: 20,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 50,
-    paddingBottom: 20,
+    backgroundColor: "#080808"
+  },
+  headerTitle: { color: "#FFF", fontSize: 26, fontWeight: "900", letterSpacing: -1 },
+  headerSub: { color: "#555", fontSize: 12, marginTop: -4 },
+  highlight: { color: "#D30000" },
+  profileBtn: { padding: 5 },
+  
+  listContent: { padding: 20 },
+  videoCard: {
+    flexDirection: "row",
     backgroundColor: "#0A0A0A",
-  },
-  logoText: {
-    fontSize: 42,
-    fontWeight: "900",
-    color: "#FFF",
-    fontStyle: "italic",
-    letterSpacing: -1,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#FFF",
-    fontStyle: "italic",
-    letterSpacing: -1,
-  },
-  headerHighlight: { color: "#D30000" },
-  searchInput: {
-    flex: 1,
-    backgroundColor: "#1A1A1A",
-    color: "#FFF",
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    marginLeft: 0,
-    marginRight: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  chipsContainer: {
-    backgroundColor: "#0A0A0A",
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#222",
-  },
-  chip: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 25,
-    backgroundColor: "#1A1A1A",
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: "#333",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  chipActive: { backgroundColor: "#D30000", borderColor: "#D30000" },
-  chipText: { color: "#888", fontSize: 14, fontWeight: "bold" },
-  chipTextActive: { color: "#FFF" },
-  heroSection: { padding: 25, alignItems: "center", marginTop: 10 },
-  heroText: {
-    color: "#444",
-    fontSize: 12,
-    fontWeight: "bold",
-    letterSpacing: 2,
-  },
-  carouselSection: { marginTop: 15 },
-  sectionTitle: {
-    color: "#FFF",
-    fontSize: 14,
-    fontWeight: "bold",
+    borderRadius: 15,
+    padding: 12,
     marginBottom: 15,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    textAlign: "left", 
-    paddingHorizontal: 20,
-  },
-  card: {
-    width: 160,
-    height: 190,
-    marginRight: 15,
-    borderRadius: 12,
-    backgroundColor: "#222",
-    overflow: "hidden",
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#151515",
   },
-  thumbnail: {
+  thumbnailContainer: {
+    width: 115,
+    height: 75,
+    borderRadius: 10,
+    backgroundColor: "#111",
+    overflow: "hidden",
+  },
+  thumbnailImage: {
     width: "100%",
     height: "100%",
+    resizeMode: "cover",
+  },
+  thumbnailPlaceholder: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.2)",
-    justifyContent: "center",
-    alignItems: "center",
+  videoInfo: {
+    flex: 1,
+    marginLeft: 15,
   },
-  playButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "rgba(211,0,0,0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFF",
+  videoTitle: {
+    color: "#EEE",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 2,
   },
-  cardTitleContainer: {
-    position: "absolute",
-    bottom: 0,
-    width: "100%",
-    backgroundColor: "rgba(0,0,0,0.75)",
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+  videoSub: {
+    color: "#555",
+    fontSize: 12,
+    marginBottom: 8,
   },
-  cardTitle: {
-    color: "#FFF",
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-
-  liveBadgeMini: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    backgroundColor: "#D30000",
+  actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    gap: 5,
   },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#FFF" },
-  liveTextMini: { color: "#FFF", fontSize: 9, fontWeight: "900" },
+  iconAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 15,
+  },
+  actionText: {
+    color: "#555",
+    fontSize: 12,
+    marginLeft: 5,
+  },
+  
+  emptyContainer: { marginTop: 150, alignItems: "center", paddingHorizontal: 40 },
+  emptyText: { color: "#333", fontSize: 14, textAlign: 'center', marginTop: 10 },
 
   modalVideoOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.95)",
-    justifyContent: "center",
-    padding: 20,
+    backgroundColor: "#000",
   },
   modalVideoHeader: {
-    position: "absolute",
-    top: 40,
-    right: 20,
-    zIndex: 10,
-    alignItems: "flex-end",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 10,
+    backgroundColor: '#000',
+    zIndex: 10
   },
-  closeButton: { padding: 10 },
+  modalTitle: { color: '#FFF', fontSize: 14, flex: 1, marginRight: 20, opacity: 0.6 },
+  modalContentScroll: { flex: 1 },
   modalVideoWrapper: {
     width: "100%",
-    maxWidth: 800,
-    alignSelf: "center",
-    backgroundColor: "#CC0000",
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  videoBox: {
-    width: "100%",
     aspectRatio: 16 / 9,
-    backgroundColor: "#000",
-    justifyContent: "center",
+    backgroundColor: '#111'
   },
-  videoPlayer: { flex: 1, width: "100%", height: "100%" },
+  videoBox: { flex: 1 },
+  videoPlayer: { flex: 1 },
+  
   bumperContainer: {
-    width: "100%",
-    aspectRatio: 16 / 9,
-    backgroundColor: "#111",
+    flex: 1,
+    backgroundColor: "#D30000",
     justifyContent: "center",
     alignItems: "center",
   },
-  bumperLogo: { color: "#FFF", fontSize: 42, fontWeight: "900" },
-  bumperHighlight: { color: "#D30000" },
-  videoFooterBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: "#CC0000",
+  bumperLogo: { color: "#FFF", fontSize: 32, fontWeight: "900" },
+  bumperHighlight: { color: "#000" },
+  bumperSub: { color: "#FFF", fontSize: 12, opacity: 0.8, marginTop: 5 },
+
+  detailsArea: { flex: 1, padding: 20 },
+  videoStatsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111'
   },
-  likesCounterText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
-  actionsContainer: { flexDirection: "row", alignItems: "center" },
-  actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    justifyContent: "center",
-    alignItems: "center",
+  statItem: { alignItems: 'center' },
+  statText: { color: '#888', fontSize: 11, marginTop: 5 },
+
+  commentSection: { marginTop: 25 },
+  sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+  inputRow: {
+    flexDirection: 'row',
+    marginBottom: 25
   },
-  actionDivider: {
-    width: 1.5,
-    backgroundColor: "#800000",
-    marginHorizontal: 8,
-    height: 28,
+  input: {
+    flex: 1,
+    backgroundColor: '#111',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    height: 45,
+    color: '#FFF'
   },
+  sendBtn: {
+    backgroundColor: '#D30000',
+    width: 45,
+    height: 45,
+    borderRadius: 8,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  commentItem: {
+    flexDirection: 'row',
+    marginBottom: 20
+  },
+  avatarMini: {
+    width: 35,
+    height: 35,
+    borderRadius: 18,
+    backgroundColor: '#222',
+    marginRight: 12
+  },
+  commentUser: { color: '#D30000', fontSize: 13, fontWeight: 'bold' },
+  commentText: { color: '#AAA', fontSize: 14, marginTop: 2 }
 });
