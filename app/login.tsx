@@ -26,6 +26,19 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Auto-login: Se atualizar a página e já tiver logado, entra direto
+  React.useEffect(() => {
+    const verificarLogin = async () => {
+      try {
+        const userId = await AsyncStorage.getItem("userId");
+        if (userId) {
+          router.replace("/(tabs)");
+        }
+      } catch (e) {}
+    };
+    verificarLogin();
+  }, []);
+
   const [alertaVisible, setAlertaVisible] = useState(false);
   const [alertaTitulo, setAlertaTitulo] = useState("");
   const [alertaMensagem, setAlertaMensagem] = useState("");

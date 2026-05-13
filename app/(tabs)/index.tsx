@@ -227,14 +227,24 @@ export default function HomeScreen() {
               ) : (
                 <View style={styles.videoBox}>
                   {selectedVideo && (
-                    <NativeVideoPlayer 
-                      videoUrl={`https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
-                      onFinish={() => {}}
-                      onFullscreenChange={async (fs) => {
-                         if(fs) await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-                         else await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
-                      }}
-                    />
+                    Platform.OS === 'web' ? (
+                      <video
+                        src={`https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
+                        controls
+                        autoPlay
+                        onEnded={() => {}}
+                        style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#000' }}
+                      />
+                    ) : (
+                      <NativeVideoPlayer 
+                        videoUrl={`https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
+                        onFinish={() => {}}
+                        onFullscreenChange={async (fs) => {
+                           if(fs) await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+                           else await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+                        }}
+                      />
+                    )
                   )}
                 </View>
               )}
