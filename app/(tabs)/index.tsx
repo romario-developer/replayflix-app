@@ -1,10 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState, useMemo } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ScreenOrientation from "expo-screen-orientation";
+import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
-    ActivityIndicator,
-    Dimensions,
+    Alert,
     FlatList,
     Image,
+    ImageBackground,
+    Modal,
+    Platform,
     RefreshControl,
     ScrollView,
     StatusBar,
@@ -13,9 +17,10 @@ import {
     TextInput,
     TouchableOpacity,
     View,
-    KeyboardAvoidingView,
-    Platform
+    Dimensions,
+    ActivityIndicator
 } from "react-native";
+import YoutubePlayer from "react-native-youtube-iframe";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { getReplays } from "../../services/api";
 
@@ -24,14 +29,16 @@ const { width } = Dimensions.get("window");
 type ReplayVideo = {
   id: string;
   filename: string;
+  size: string;
   created_at: string;
   arena: string;
+  user_id?: string | number | null;
   likes: number;
-  views?: number;
   thumbnail_url?: string;
+  views?: number;
 };
 
-// Formatação de data amigável
+// --- FORMATAÇÃO DE DATA BRASILEIRA ---
 const formatarData = (dataString: string) => {
     if (!dataString) return '';
     const data = new Date(dataString);
@@ -43,12 +50,28 @@ const formatarData = (dataString: string) => {
     }).replace('.', '');
 };
 
-const NativeVideoPlayer = ({ videoUrl }: { videoUrl: string }) => {
+// --- COMPONENTE DE VÍDEO NATIVO ---
+const NativeVideoPlayer = ({ videoUrl, onFinish }: { videoUrl: string, onFinish: () => void }) => {
   const player = useVideoPlayer(videoUrl, player => {
     player.loop = false;
     player.play(); 
   });
-  return <VideoView player={player} style={styles.videoPlayer} allowsFullscreen />;
+
+  useEffect(() => {
+    const subscription = player.addListener('playToEnd', () => {
+      onFinish();
+    });
+    return () => subscription.remove();
+  }, [player]);
+
+  return (
+    <VideoView 
+      player={player} 
+      style={styles.videoPlayer} 
+      allowsFullscreen 
+      allowsPictureInPicture
+    />
+  );
 };
 
 export default function ReplaysScreen() {
@@ -56,146 +79,184 @@ export default function ReplaysScreen() {
   const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [comment, setComment] = useState("");
 
   const loadReplays = async () => {
     try {
       const data = await getReplays();
-      // Filtra apenas vídeos e ordena pelo mais recente primeiro
-      const apenasVideos = data
-        .filter((f: any) => f.filename.toLowerCase().endsWith('.webm') || f.filename.toLowerCase().endsWith('.mp4'))
-        .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      setReplays(apenasVideos);
-      
-      // Auto-seleciona o lance mais recente se nada estiver selecionado
-      if (apenasVideos.length > 0 && !selectedVideo) {
-        setSelectedVideo(apenasVideos[0]);
+      setReplays(data);
+      if (data.length > 0 && !selectedVideo) {
+        setSelectedVideo(data[0]);
       }
     } catch (error) {
-      console.error("Erro ao carregar:", error);
+      console.error("Erro ao carregar replays:", error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  useEffect(() => { loadReplays(); }, []);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
+  useEffect(() => {
     loadReplays();
-  }, [selectedVideo]);
+  }, []);
 
-  // Organização em Seções: Hoje, Ontem e Mais Antigos
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadReplays();
+    setRefreshing(false);
+  }, []);
+
+  // --- LÓGICA DE CATEGORIZAÇÃO (ESTILO FLIX) ---
   const sections = useMemo(() => {
     const hoje: ReplayVideo[] = [];
-    const anterior: ReplayVideo[] = [];
+    const semana: ReplayVideo[] = [];
+    const antigos: ReplayVideo[] = [];
     const agora = new Date();
 
-    replays.forEach(v => {
-      const dataV = new Date(v.created_at);
-      const diffInDays = Math.floor((agora.getTime() - dataV.getTime()) / (1000 * 3600 * 24));
-      
-      if (diffInDays === 0) hoje.push(v);
-      else anterior.push(v);
+    replays.forEach(video => {
+      const dataVideo = new Date(video.created_at);
+      const diffTime = Math.abs(agora.getTime() - dataVideo.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays <= 1) hoje.push(video);
+      else if (diffDays <= 7) semana.push(video);
+      else antigos.push(video);
     });
 
     return [
       { title: "🔥 Lances de Hoje", data: hoje },
-      { title: "📅 Lances Recentes", data: anterior },
+      { title: "📅 Destaques da Semana", data: semana },
+      { title: "⏳ Arquivo de Gols", data: antigos },
     ].filter(s => s.data.length > 0);
   }, [replays]);
 
+  const renderVideoCard = ({ item }: { item: ReplayVideo }) => (
+    <TouchableOpacity 
+      style={styles.card} 
+      onPress={() => setSelectedVideo(item)}
+    >
+      <Image 
+        source={{ uri: item.thumbnail_url || 'https://via.placeholder.com/160x90/111/D30000?text=Replay' }} 
+        style={styles.cardThumb} 
+      />
+      <View style={styles.cardInfo}>
+        <Text style={styles.cardTitle} numberOfLines={1}>Golaço - {item.arena}</Text>
+        <Text style={styles.cardDate}>{formatarData(item.created_at)}</Text>
+      </View>
+      {selectedVideo?.id === item.id && <View style={styles.activeIndicator} />}
+    </TouchableOpacity>
+  );
+
   if (loading && !refreshing) {
-    return <View style={styles.loader}><ActivityIndicator size="large" color="#D30000" /></View>;
+    return (
+      <View style={styles.loaderContainer}>
+        <ActivityIndicator size="large" color="#D30000" />
+      </View>
+    );
   }
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerLogo}>REPLAY<Text style={{color: '#D30000'}}>FLIX</Text></Text>
-        <TouchableOpacity style={styles.refreshBadge} onPress={onRefresh}>
-          <Ionicons name="refresh" size={18} color="#FFF" />
-          <Text style={styles.refreshText}>Atualizar</Text>
-        </TouchableOpacity>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={{marginRight: 20}} onPress={onRefresh}>
+            <Ionicons name="refresh" size={24} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Ionicons name="person-circle-outline" size={28} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView 
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" title="Buscando golaços..." titleColor="#FFF" />}
+        stickyHeaderIndices={[1]}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />}
       >
-        {/* AREA DO PLAYER - SEMPRE DINÂMICA */}
-        <View style={styles.heroArea}>
+        {/* PLAYER / BUMPER */}
+        <View style={styles.videoBox}>
           {selectedVideo ? (
-            <NativeVideoPlayer key={selectedVideo.id} videoUrl={`https://replayflix-backend.onrender.com/uploads/${selectedVideo.filename}`} />
+            <NativeVideoPlayer 
+              videoUrl={`https://replayflix-backend.onrender.com/uploads/${selectedVideo.filename}`}
+              onFinish={() => console.log("Fim")}
+            />
           ) : (
-            <View style={styles.emptyPlayer}>
-              <Ionicons name="football" size={50} color="#333" />
-              <Text style={styles.emptyText}>Nenhum lance selecionado</Text>
+            <View style={styles.bumperContainer}>
+               <Text style={styles.bumperLogo}>REPLAY<Text style={styles.bumperHighlight}>FLIX</Text></Text>
+               <Text style={styles.bumperSub}>SELECIONE UM LANCE PARA ASSISTIR</Text>
             </View>
           )}
         </View>
 
+        {/* INFO E ESTATÍSTICAS */}
         {selectedVideo && (
-          <View style={styles.mainInfo}>
-            <View style={styles.infoRow}>
-               <Text style={styles.mainTitle}>Golaço - {selectedVideo.arena}</Text>
-               <View style={styles.liveBadge}><Text style={styles.liveText}>HD</Text></View>
-            </View>
-            <Text style={styles.mainDate}>{formatarData(selectedVideo.created_at)}</Text>
+          <View style={styles.detailsArea}>
+            <Text style={styles.mainTitle}>Golaço - {selectedVideo.arena}</Text>
+            <Text style={styles.mainDate}>🎥 {formatarData(selectedVideo.created_at)}</Text>
             
-            <View style={styles.actionRow}>
-              <TouchableOpacity style={styles.mainActionBtn}>
+            <View style={styles.videoStatsBar}>
+              <View style={styles.statItem}>
+                <Ionicons name="play-outline" size={20} color="#D30000" />
+                <Text style={styles.statText}>{selectedVideo.views || 0} views</Text>
+              </View>
+              <View style={styles.statItem}>
                 <Ionicons name="heart" size={20} color="#D30000" />
-                <Text style={styles.actionLabel}>{selectedVideo.likes || 0} Curtidas</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.mainActionBtn}>
-                <Ionicons name="share-social" size={20} color="#FFF" />
-                <Text style={styles.actionLabel}>Compartilhar</Text>
+                <Text style={styles.statText}>{selectedVideo.likes || 0} likes</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Ionicons name="time-outline" size={20} color="#D30000" />
+                <Text style={styles.statText}>15s</Text>
+              </View>
+              <TouchableOpacity style={styles.statItem}>
+                <Ionicons name="share-social-outline" size={20} color="#FFF" />
+                <Text style={styles.statText}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* LISTAGEM ESTILO CARROSSEL PREMIUM */}
-        {sections.length === 0 ? (
-          <View style={styles.noVideosArea}>
-            <Ionicons name="cloud-offline-outline" size={40} color="#222" />
-            <Text style={styles.noVideosText}>Nenhum lance encontrado. Grave um agora!</Text>
+        {/* LISTAS HORIZONTAIS (NETFLIX STYLE) */}
+        {sections.map((section, index) => (
+          <View key={index} style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>{section.title}</Text>
+            <FlatList
+              horizontal
+              data={section.data}
+              renderItem={renderVideoCard}
+              keyExtractor={(item) => item.id}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingLeft: 20, paddingRight: 10 }}
+            />
           </View>
-        ) : (
-          sections.map((section, i) => (
-            <View key={i} style={styles.sectionContainer}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <FlatList
-                horizontal
-                data={section.data}
-                keyExtractor={item => item.id}
-                showsHorizontalScrollIndicator={false}
-                renderItem={({ item }) => (
-                  <TouchableOpacity 
-                    style={[styles.premiumCard, selectedVideo?.id === item.id && styles.activeCard]} 
-                    onPress={() => setSelectedVideo(item)}
-                  >
-                    <Image 
-                      source={{ uri: item.thumbnail_url || 'https://via.placeholder.com/180x100/111/D30000?text=Replay' }} 
-                      style={styles.cardImage} 
-                    />
-                    <View style={styles.cardOverlay}>
-                       <Ionicons name="play-circle" size={24} color="#FFF" />
-                    </View>
-                    <View style={styles.cardContent}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>{item.arena}</Text>
-                      <Text style={styles.cardSubtitle}>{formatarData(item.created_at).split(',')[0]}</Text>
-                    </View>
-                  </TouchableOpacity>
-                )}
-                contentContainerStyle={{ paddingLeft: 20 }}
-              />
+        ))}
+
+        {/* SEÇÃO DE COMENTÁRIOS */}
+        <View style={styles.commentSection}>
+          <Text style={styles.sectionTitle}>Comentários</Text>
+          <View style={styles.inputRow}>
+            <TextInput 
+              style={styles.input} 
+              placeholder="Adicione um comentário..." 
+              placeholderTextColor="#666"
+              value={comment}
+              onChangeText={setComment}
+            />
+            <TouchableOpacity style={styles.sendBtn}>
+              <Ionicons name="send" size={20} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Mock de comentário para preencher layout */}
+          <View style={styles.commentItem}>
+            <View style={styles.commentAvatar} />
+            <View>
+              <Text style={styles.commentUser}>Jogador Anonimo</Text>
+              <Text style={styles.commentText}>Que golaço! Esse jogo foi épico.</Text>
             </View>
-          ))
-        )}
+          </View>
+        </View>
         
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -204,49 +265,95 @@ export default function ReplaysScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#080808" },
-  loader: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: "#000" },
+  loaderContainer: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   
-  header: { 
-    paddingTop: 60, 
-    paddingHorizontal: 20, 
-    paddingBottom: 15, 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
+  header: {
+    paddingTop: 50,
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#080808'
+    backgroundColor: '#000'
   },
-  headerLogo: { color: "#FFF", fontSize: 24, fontWeight: "900", fontStyle: 'italic' },
-  refreshBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  refreshText: { color: '#FFF', fontSize: 12, marginLeft: 5, fontWeight: '600' },
-
-  heroArea: { width: width, aspectRatio: 16 / 9, backgroundColor: "#000", elevation: 10 },
+  headerLogo: { color: "#FFF", fontSize: 22, fontWeight: "900", fontStyle: 'italic' },
+  headerIcons: { flexDirection: 'row', alignItems: 'center' },
+  
+  videoBox: {
+    width: width,
+    aspectRatio: 16 / 9,
+    backgroundColor: "#111",
+  },
   videoPlayer: { flex: 1 },
-  emptyPlayer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
-  emptyText: { color: '#333', marginTop: 10, fontWeight: '600' },
-
-  mainInfo: { padding: 20, backgroundColor: '#080808' },
-  infoRow: { flexDirection: 'row', alignItems: 'center' },
-  mainTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold', flex: 1 },
-  liveBadge: { backgroundColor: '#D30000', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  liveText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
-  mainDate: { color: '#888', fontSize: 13, marginTop: 4 },
   
-  actionRow: { flexDirection: 'row', marginTop: 20, borderTopWidth: 1, borderTopColor: '#1A1A1A', paddingTop: 15 },
-  mainActionBtn: { flexDirection: 'row', alignItems: 'center', marginRight: 30 },
-  actionLabel: { color: '#FFF', marginLeft: 8, fontSize: 13, fontWeight: '500' },
+  bumperContainer: {
+    flex: 1,
+    backgroundColor: "#D30000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  bumperLogo: { color: "#FFF", fontSize: 32, fontWeight: "900" },
+  bumperHighlight: { color: "#000" },
+  bumperSub: { color: "#FFF", fontSize: 10, opacity: 0.8, marginTop: 5, letterSpacing: 2 },
 
-  sectionContainer: { marginTop: 30 },
-  sectionTitle: { color: '#FFF', fontSize: 17, fontWeight: '800', marginLeft: 20, marginBottom: 15, textTransform: 'uppercase', letterSpacing: 1 },
+  detailsArea: { padding: 20 },
+  mainTitle: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
+  mainDate: { color: '#888', fontSize: 13, marginTop: 5 },
   
-  premiumCard: { width: 180, marginRight: 15, backgroundColor: '#121212', borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#1A1A1A' },
-  activeCard: { borderColor: '#D30000', borderWidth: 2 },
-  cardImage: { width: '100%', height: 100, backgroundColor: '#222' },
-  cardOverlay: { position: 'absolute', top: 35, left: 75 },
-  cardContent: { padding: 10 },
-  cardTitle: { color: '#FFF', fontSize: 13, fontWeight: 'bold' },
-  cardSubtitle: { color: '#666', fontSize: 11, marginTop: 2 },
+  videoStatsBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 20,
+    marginTop: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+    borderTopWidth: 1,
+    borderTopColor: '#111',
+  },
+  statItem: { alignItems: 'center' },
+  statText: { color: '#888', fontSize: 11, marginTop: 5 },
 
-  noVideosArea: { padding: 40, alignItems: 'center', justifyContent: 'center' },
-  noVideosText: { color: '#222', textAlign: 'center', marginTop: 10, fontWeight: '600' }
+  sectionContainer: { marginTop: 25 },
+  sectionTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold', marginLeft: 20, marginBottom: 15 },
+  
+  card: { width: 160, marginRight: 12, position: 'relative' },
+  cardThumb: { width: 160, height: 90, borderRadius: 8, backgroundColor: '#111' },
+  cardInfo: { marginTop: 8 },
+  cardTitle: { color: '#FFF', fontSize: 13, fontWeight: '600' },
+  cardDate: { color: '#666', fontSize: 11, marginTop: 2 },
+  
+  activeIndicator: {
+    position: 'absolute',
+    bottom: 45,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#D30000',
+    borderRadius: 2
+  },
+
+  commentSection: { padding: 20, marginTop: 10 },
+  inputRow: { flexDirection: 'row', marginBottom: 20 },
+  input: {
+    flex: 1,
+    backgroundColor: '#111',
+    borderRadius: 8,
+    paddingHorizontal: 15,
+    height: 45,
+    color: '#FFF'
+  },
+  sendBtn: {
+    backgroundColor: '#D30000',
+    width: 45,
+    height: 45,
+    borderRadius: 8,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  commentItem: { flexDirection: 'row', marginBottom: 15 },
+  commentAvatar: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#333', marginRight: 12 },
+  commentUser: { color: '#D30000', fontSize: 13, fontWeight: 'bold' },
+  commentText: { color: '#BBB', fontSize: 13, marginTop: 2 }
 });
