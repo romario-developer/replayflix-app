@@ -1,11 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ScreenOrientation from "expo-screen-orientation";
+import { Image } from "expo-image"; // Upgrade para expo-image
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    Alert,
     FlatList,
-    Image,
     Modal,
     Platform,
     RefreshControl,
@@ -18,13 +17,15 @@ import {
     View,
     Dimensions,
     Share,
+    ActivityIndicator
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { getReplays } from "../../services/api";
+import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
 
 const { width } = Dimensions.get("window");
-const COLUMN_COUNT = 2; // Grid de 2 colunas para melhor visibilidade em mobile, resultando em ~4-6 cards por tela
-const ITEM_WIDTH = (width - 40) / COLUMN_COUNT;
+const COLUMN_COUNT = 2;
+const ITEM_WIDTH = (width - 48) / COLUMN_COUNT;
 
 type ReplayVideo = {
   id: string;
@@ -37,7 +38,6 @@ type ReplayVideo = {
   thumbnail_url?: string;
 };
 
-// --- COMPONENTE DE VÍDEO NATIVO ---
 const NativeVideoPlayer = ({ videoUrl, onFinish, onFullscreenChange }: { videoUrl: string, onFinish: () => void, onFullscreenChange: (isFullscreen: boolean) => void }) => {
   const player = useVideoPlayer(videoUrl, player => {
     player.loop = false;
@@ -66,6 +66,7 @@ const NativeVideoPlayer = ({ videoUrl, onFinish, onFullscreenChange }: { videoUr
 export default function HomeScreen() {
   const [replays, setReplays] = useState<ReplayVideo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
   const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
   const [commentText, setCommentText] = useState("");
@@ -95,6 +96,8 @@ export default function HomeScreen() {
       setReplays(dados);
     } catch (error) {
       console.error("Erro ao carregar replays:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -117,7 +120,7 @@ export default function HomeScreen() {
     try {
       const url = `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${video.filename}`;
       await Share.share({
-        message: `Confira esse replay incrível na ReplayFlix: ${video.arena}`,
+        message: `Olha esse lance na ReplayFlix! ⚽\nLocal: ${video.arena}`,
         url: url,
       });
     } catch (error) {
@@ -140,28 +143,66 @@ export default function HomeScreen() {
   const handleVideoSelect = (video: ReplayVideo) => {
     setSelectedVideo(video);
     setShowBumper(true);
-    setTimeout(() => setShowBumper(false), 2000);
+    setTimeout(() => setShowBumper(false), 1800);
   };
 
-  const renderItem = ({ item }: { item: ReplayVideo }) => {
+  const renderFeatured = () => {
+    if (replays.length === 0) return null;
+    const featured = replays[0];
+    return (
+      <Animated.View entering={FadeInDown.duration(800)} style={styles.featuredContainer}>
+        <TouchableOpacity activeOpacity={0.9} onPress={() => handleVideoSelect(featured)} style={styles.featuredCard}>
+          <Image 
+            source={{ uri: featured.thumbnail_url }} 
+            style={styles.featuredImage}
+            contentFit="cover"
+            transition={500}
+          />
+          <View style={styles.featuredOverlay}>
+            <View style={styles.liveBadge}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>NOVO LANCE</Text>
+            </View>
+            <Text style={styles.featuredTitle}>{featured.arena}</Text>
+            <View style={styles.featuredActions}>
+              <View style={styles.playButtonFeatured}>
+                <Ionicons name="play" size={20} color="#000" />
+                <Text style={styles.playButtonText}>Assistir Agora</Text>
+              </View>
+            </View>
+          </View>
+        </TouchableOpacity>
+        <Text style={styles.sectionHeader}>Explorar Replays</Text>
+      </Animated.View>
+    );
+  };
+
+  const renderItem = ({ item, index }: { item: ReplayVideo, index: number }) => {
+    if (index === 0) return null; // Já está no destaque
+
     const isLiked = likedVideos.has(item.id);
     const commentCount = (comments[item.id] || []).length;
 
     return (
-      <View style={styles.cardContainer}>
+      <Animated.View 
+        entering={FadeInDown.delay(index * 100).duration(600)} 
+        style={styles.cardContainer}
+      >
         <TouchableOpacity 
-          activeOpacity={0.8}
+          activeOpacity={0.7}
           style={styles.card} 
           onPress={() => handleVideoSelect(item)}
         >
           <View style={styles.thumbnailWrapper}>
-            {item.thumbnail_url ? (
-              <Image source={{ uri: item.thumbnail_url }} style={styles.cardThumbnail} />
-            ) : (
-              <View style={styles.placeholderThumbnail}>
-                <Ionicons name="play-circle" size={40} color="rgba(255,255,255,0.3)" />
-              </View>
-            )}
+            <Image 
+              source={{ uri: item.thumbnail_url }} 
+              style={styles.cardThumbnail} 
+              contentFit="cover"
+              transition={300}
+            />
+            <View style={styles.cardPlayIcon}>
+               <Ionicons name="play" size={18} color="#FFF" />
+            </View>
             <View style={styles.durationBadge}>
               <Text style={styles.durationText}>{item.size}</Text>
             </View>
@@ -169,7 +210,7 @@ export default function HomeScreen() {
 
           <View style={styles.cardInfo}>
             <Text style={styles.cardTitle} numberOfLines={1}>
-              {item.filename.replace('.mp4', '')}
+              {item.filename.replace('.mp4', '').split('_')[0]}
             </Text>
             <Text style={styles.cardSubtitle} numberOfLines={1}>{item.arena}</Text>
             
@@ -177,42 +218,47 @@ export default function HomeScreen() {
               <TouchableOpacity onPress={() => toggleLike(item.id)} style={styles.actionButton}>
                 <Ionicons 
                   name={isLiked ? "heart" : "heart-outline"} 
-                  size={18} 
-                  color={isLiked ? "#FF3B30" : "#8E8E93"} 
+                  size={16} 
+                  color={isLiked ? "#D30000" : "#8E8E93"} 
                 />
-                <Text style={[styles.actionLabel, isLiked && {color: "#FF3B30"}]}>
+                <Text style={[styles.actionLabel, isLiked && {color: "#D30000"}]}>
                   {item.likes + (isLiked ? 1 : 0)}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => handleVideoSelect(item)} style={styles.actionButton}>
-                <Ionicons name="chatbubble-outline" size={16} color="#8E8E93" />
+              <View style={styles.actionButton}>
+                <Ionicons name="chatbubble-outline" size={14} color="#8E8E93" />
                 <Text style={styles.actionLabel}>{commentCount}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => handleShare(item)} style={styles.actionButton}>
-                <Ionicons name="share-outline" size={18} color="#8E8E93" />
-              </TouchableOpacity>
+              </View>
             </View>
           </View>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     );
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#D30000" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
       
       <View style={styles.header}>
-        <View>
+        <View style={styles.logoContainer}>
           <Text style={styles.headerTitle}>REPLAY<Text style={styles.highlight}>FLIX</Text></Text>
-          <Text style={styles.headerSub}>Seu show em campo</Text>
+          <View style={styles.onlineStatus} />
         </View>
         <TouchableOpacity style={styles.profileBtn}>
-           <View style={styles.avatarPlaceholder}>
-              <Ionicons name="person" size={20} color="#FFF" />
-           </View>
+           <Image 
+             source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }} 
+             style={styles.avatar}
+           />
         </TouchableOpacity>
       </View>
 
@@ -220,9 +266,11 @@ export default function HomeScreen() {
         data={replays}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        ListHeaderComponent={renderFeatured}
         numColumns={COLUMN_COUNT}
         contentContainerStyle={styles.listContent}
         columnWrapperStyle={styles.columnWrapper}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
         }
@@ -237,17 +285,20 @@ export default function HomeScreen() {
       <Modal
         visible={!!selectedVideo}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setSelectedVideo(null)}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setSelectedVideo(null)} style={styles.closeBtn}>
-              <Ionicons name="chevron-down" size={30} color="#FFF" />
+              <Ionicons name="chevron-down" size={32} color="#FFF" />
             </TouchableOpacity>
-            <Text style={styles.modalTitle} numberOfLines={1}>{selectedVideo?.filename}</Text>
-            <TouchableOpacity onPress={() => selectedVideo && handleShare(selectedVideo)}>
-              <Ionicons name="share-social-outline" size={24} color="#FFF" />
+            <View style={styles.modalHeaderInfo}>
+                <Text style={styles.modalTitle} numberOfLines={1}>{selectedVideo?.arena}</Text>
+                <Text style={styles.modalSub}>{selectedVideo?.size} • {selectedVideo?.created_at}</Text>
+            </View>
+            <TouchableOpacity onPress={() => selectedVideo && handleShare(selectedVideo)} style={styles.modalShareBtn}>
+              <Ionicons name="share-outline" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
 
@@ -255,7 +306,8 @@ export default function HomeScreen() {
             <View style={styles.videoContainer}>
               {showBumper ? (
                 <View style={styles.bumper}>
-                  <Text style={styles.bumperText}>REPLAY<Text style={{color:'#000'}}>FLIX</Text></Text>
+                  <Animated.Text entering={FadeInUp} style={styles.bumperText}>REPLAY<Text style={{color:'#000'}}>FLIX</Text></Animated.Text>
+                  <ActivityIndicator color="#000" style={{marginTop: 20}} />
                 </View>
               ) : (
                 selectedVideo && (
@@ -281,20 +333,22 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.detailsContent}>
-              <View style={styles.detailsHeader}>
-                <View style={{flex:1}}>
-                  <Text style={styles.detailTitle}>{selectedVideo?.arena}</Text>
-                  <Text style={styles.detailSub}>{selectedVideo?.created_at} • {selectedVideo?.size}</Text>
-                </View>
+              <View style={styles.interactionRow}>
                 <TouchableOpacity 
-                  onPress={() => selectedVideo && toggleLike(selectedVideo.id)}
-                  style={[styles.likeCircle, selectedVideo && likedVideos.has(selectedVideo.id) && {backgroundColor: '#FF3B30'}]}
+                    onPress={() => selectedVideo && toggleLike(selectedVideo.id)}
+                    style={styles.mainLikeButton}
                 >
-                  <Ionicons 
-                    name={selectedVideo && likedVideos.has(selectedVideo.id) ? "heart" : "heart-outline"} 
-                    size={24} 
-                    color="#FFF" 
-                  />
+                    <Ionicons 
+                        name={selectedVideo && likedVideos.has(selectedVideo.id) ? "heart" : "heart-outline"} 
+                        size={28} 
+                        color={selectedVideo && likedVideos.has(selectedVideo.id) ? "#D30000" : "#FFF"} 
+                    />
+                    <Text style={styles.mainActionText}>Curtir</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.mainLikeButton}>
+                    <Ionicons name="download-outline" size={28} color="#FFF" />
+                    <Text style={styles.mainActionText}>Salvar</Text>
                 </TouchableOpacity>
               </View>
 
@@ -305,13 +359,13 @@ export default function HomeScreen() {
               <View style={styles.commentInputRow}>
                 <TextInput
                   style={styles.commentInput}
-                  placeholder="Adicione um comentário..."
+                  placeholder="Comente este lance..."
                   placeholderTextColor="#8E8E93"
                   value={commentText}
                   onChangeText={setCommentText}
                 />
                 <TouchableOpacity style={styles.sendButton} onPress={addComment}>
-                  <Ionicons name="arrow-up-circle" size={32} color="#D30000" />
+                  <Ionicons name="send" size={20} color="#FFF" />
                 </TouchableOpacity>
               </View>
 
@@ -319,7 +373,7 @@ export default function HomeScreen() {
                 <View key={i} style={styles.commentCard}>
                   <View style={styles.userAvatarMini} />
                   <View style={{flex:1}}>
-                    <Text style={styles.commentUserName}>Usuário</Text>
+                    <Text style={styles.commentUserName}>Craque #{Math.floor(Math.random()*100)}</Text>
                     <Text style={styles.commentTextContent}>{c}</Text>
                   </View>
                 </View>
@@ -333,82 +387,98 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  container: { flex: 1, backgroundColor: "#050505" },
   header: {
-    paddingTop: 60,
+    paddingTop: 50,
     paddingHorizontal: 20,
     paddingBottom: 15,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.8)",
+    backgroundColor: "rgba(5,5,5,0.9)",
   },
-  headerTitle: { color: "#FFF", fontSize: 22, fontWeight: "900", letterSpacing: 1 },
+  logoContainer: { flexDirection: 'row', alignItems: 'center' },
+  headerTitle: { color: "#FFF", fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
   highlight: { color: "#D30000" },
-  headerSub: { color: "#8E8E93", fontSize: 12, fontWeight: "500" },
-  profileBtn: { padding: 4 },
-  avatarPlaceholder: { 
-    width: 36, height: 36, borderRadius: 18, backgroundColor: "#1C1C1E", 
-    justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#2C2C2E" 
-  },
+  onlineStatus: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#4CAF50', marginLeft: 8, marginTop: 4 },
+  profileBtn: { padding: 2 },
+  avatar: { width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: '#D30000' },
   
-  listContent: { padding: 15 },
+  listContent: { padding: 16 },
   columnWrapper: { justifyContent: "space-between" },
-  cardContainer: { width: ITEM_WIDTH, marginBottom: 20 },
+  sectionHeader: { color: '#FFF', fontSize: 18, fontWeight: '800', marginTop: 25, marginBottom: 15 },
+  
+  featuredContainer: { width: '100%', marginBottom: 10 },
+  featuredCard: { width: '100%', height: 220, borderRadius: 20, overflow: 'hidden', backgroundColor: '#111' },
+  featuredImage: { width: '100%', height: '100%' },
+  featuredOverlay: { 
+    ...StyleSheet.absoluteFillObject, 
+    backgroundColor: 'rgba(0,0,0,0.4)', 
+    padding: 20, 
+    justifyContent: 'flex-end' 
+  },
+  liveBadge: { 
+    position: 'absolute', top: 15, left: 15, 
+    backgroundColor: 'rgba(211,0,0,0.9)', 
+    paddingHorizontal: 8, paddingVertical: 4, 
+    borderRadius: 6, flexDirection: 'row', alignItems: 'center' 
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FFF', marginRight: 5 },
+  liveText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+  featuredTitle: { color: '#FFF', fontSize: 24, fontWeight: '900', marginBottom: 10 },
+  featuredActions: { flexDirection: 'row' },
+  playButtonFeatured: { 
+    backgroundColor: '#FFF', paddingHorizontal: 15, paddingVertical: 8, 
+    borderRadius: 8, flexDirection: 'row', alignItems: 'center' 
+  },
+  playButtonText: { color: '#000', fontWeight: 'bold', marginLeft: 5, fontSize: 13 },
+
+  cardContainer: { width: ITEM_WIDTH, marginBottom: 18 },
   card: {
-    backgroundColor: "#1C1C1E",
+    backgroundColor: "#121212",
     borderRadius: 16,
     overflow: "hidden",
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
+    borderWidth: 1,
+    borderColor: "#1A1A1A",
   },
-  thumbnailWrapper: {
-    width: "100%",
-    aspectRatio: 16 / 10,
-    backgroundColor: "#2C2C2E",
+  thumbnailWrapper: { width: "100%", aspectRatio: 16 / 10, backgroundColor: "#1A1A1A" },
+  cardThumbnail: { width: "100%", height: "100%" },
+  cardPlayIcon: { 
+    position: 'absolute', top: '50%', left: '50%', 
+    transform: [{translateX: -15}, {translateY: -15}],
+    width: 30, height: 30, borderRadius: 15, 
+    backgroundColor: 'rgba(211,0,0,0.8)', 
+    justifyContent: 'center', alignItems: 'center' 
   },
-  cardThumbnail: { width: "100%", height: "100%", resizeMode: "cover" },
-  placeholderThumbnail: { flex: 1, justifyContent: "center", alignItems: "center" },
   durationBadge: {
-    position: "absolute",
-    bottom: 8,
-    right: 8,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    position: "absolute", bottom: 6, right: 6,
+    backgroundColor: "rgba(0,0,0,0.8)", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4,
   },
-  durationText: { color: "#FFF", fontSize: 10, fontWeight: "bold" },
+  durationText: { color: "#FFF", fontSize: 9, fontWeight: "bold" },
   cardInfo: { padding: 10 },
-  cardTitle: { color: "#FFF", fontSize: 14, fontWeight: "700", marginBottom: 2 },
-  cardSubtitle: { color: "#8E8E93", fontSize: 11, marginBottom: 10 },
+  cardTitle: { color: "#FFF", fontSize: 13, fontWeight: "700", marginBottom: 1 },
+  cardSubtitle: { color: "#8E8E93", fontSize: 10, marginBottom: 8 },
   cardActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderTopWidth: 0.5,
-    borderTopColor: "#2C2C2E",
-    paddingTop: 10,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderTopWidth: 0.5, borderTopColor: "#1A1A1A", paddingTop: 8,
   },
   actionButton: { flexDirection: "row", alignItems: "center" },
-  actionLabel: { color: "#8E8E93", fontSize: 12, marginLeft: 4, fontWeight: "600" },
+  actionLabel: { color: "#8E8E93", fontSize: 11, marginLeft: 3, fontWeight: "600" },
   
   emptyContainer: { marginTop: 100, alignItems: "center" },
   emptyText: { color: "#48484A", fontSize: 16, marginTop: 15 },
 
   modalOverlay: { flex: 1, backgroundColor: "#000" },
   modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingTop: 50,
-    paddingHorizontal: 20,
-    paddingBottom: 15,
+    flexDirection: 'row', alignItems: 'center', paddingTop: 50,
+    paddingHorizontal: 15, paddingBottom: 15, backgroundColor: '#000'
   },
-  closeBtn: { marginRight: 15 },
-  modalTitle: { color: '#FFF', fontSize: 16, fontWeight: '600', flex: 1 },
+  modalHeaderInfo: { flex: 1, marginLeft: 10 },
+  closeBtn: { padding: 5 },
+  modalTitle: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  modalSub: { color: '#8E8E93', fontSize: 11 },
+  modalShareBtn: { padding: 8 },
+
   modalScroll: { flex: 1 },
   videoContainer: { width: "100%", aspectRatio: 16 / 9, backgroundColor: '#000' },
   webVideo: { width: '100%', height: '100%', objectFit: 'contain' },
@@ -417,22 +487,23 @@ const styles = StyleSheet.create({
   bumperText: { color: "#FFF", fontSize: 28, fontWeight: "900" },
   
   detailsContent: { padding: 20 },
-  detailsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  detailTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
-  detailSub: { color: '#8E8E93', fontSize: 13, marginTop: 4 },
-  likeCircle: { 
-    width: 48, height: 48, borderRadius: 24, backgroundColor: '#2C2C2E', 
+  interactionRow: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 10 },
+  mainLikeButton: { alignItems: 'center', minWidth: 80 },
+  mainActionText: { color: '#FFF', fontSize: 12, marginTop: 6, fontWeight: '500' },
+  
+  divider: { height: 1, backgroundColor: '#1A1A1A', marginVertical: 20 },
+  sectionTitle: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
+  commentInputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+  commentInput: {
+    flex: 1, height: 44, backgroundColor: '#121212', borderRadius: 12,
+    paddingHorizontal: 15, color: '#FFF', marginRight: 10, borderWidth: 1, borderColor: '#1A1A1A'
+  },
+  sendButton: { 
+    width: 44, height: 44, borderRadius: 12, backgroundColor: '#D30000', 
     justifyContent: 'center', alignItems: 'center' 
   },
-  divider: { height: 1, backgroundColor: '#1C1C1E', marginVertical: 10 },
-  sectionTitle: { color: '#FFF', fontSize: 17, fontWeight: 'bold', marginVertical: 15 },
-  commentInputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  commentInput: {
-    flex: 1, height: 44, backgroundColor: '#1C1C1E', borderRadius: 22,
-    paddingHorizontal: 15, color: '#FFF', marginRight: 10
-  },
-  commentCard: { flexDirection: 'row', marginBottom: 15, backgroundColor: '#0A0A0A', padding: 12, borderRadius: 12 },
-  userAvatarMini: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#2C2C2E', marginRight: 12 },
-  commentUserName: { color: '#FFF', fontSize: 13, fontWeight: 'bold', marginBottom: 2 },
-  commentTextContent: { color: '#8E8E93', fontSize: 13, lineHeight: 18 },
+  commentCard: { flexDirection: 'row', marginBottom: 18 },
+  userAvatarMini: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#1A1A1A', marginRight: 12 },
+  commentUserName: { color: '#FFF', fontSize: 13, fontWeight: '700', marginBottom: 2 },
+  commentTextContent: { color: '#AAA', fontSize: 13, lineHeight: 18 },
 });
