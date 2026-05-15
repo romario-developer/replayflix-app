@@ -8,6 +8,8 @@ import {
     Modal,
     Platform,
     RefreshControl,
+    ScrollView,
+    StatusBar,
     StyleSheet,
     Text,
     TextInput,
@@ -15,51 +17,69 @@ import {
     View,
     Dimensions,
     Share,
-    ActivityIndicator,
-    StatusBar
+    ActivityIndicator
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { getReplays, likeReplay, unlikeReplay, ReplayVideo } from "../../services/api";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
+import { router } from 'expo-router';
 
-const { height, width } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
+const ITEM_WIDTH = width * 0.8; // Largura para o carrossel de destaques
+const CARD_WIDTH = (width - 48) / 2; // Largura para os cards de categoria (2 colunas)
 
-// Componente de Player de Vídeo nativo
-const NativeVideoPlayer = ({ videoUrl, isPlaying, isMuted, onFinish, onFullscreenChange }: 
-  { videoUrl: string, isPlaying: boolean, isMuted: boolean, onFinish: () => void, onFullscreenChange: (isFullscreen: boolean) => void }) => {
-  const player = useVideoPlayer(videoUrl, p => {
-    p.loop = true; // Vídeos em loop
-    p.muted = true; // Começa mutado
-  });
-
-  useEffect(() => {
-    if (isPlaying) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [isPlaying, player]);
-
-  useEffect(() => {
-    player.muted = isMuted;
-  }, [isMuted, player]);
-
-  useEffect(() => {
-    const subscription = player.addListener("playToEnd", () => {
-      onFinish();
-    });
-    return () => {
-      subscription.remove();
-    };
-  }, [player]);
+// Componente de Card de Vídeo para categorias e grids
+const VideoCard = ({ video, onSelectVideo, toggleLike, userId, comments }: 
+  { video: ReplayVideo, onSelectVideo: (video: ReplayVideo) => void, toggleLike: (video: ReplayVideo) => void, userId: string | null, comments: { [key: string]: string[] } }) => {
+  const isLiked = !!video.liked_by_me;
+  const commentCount = (comments[video.id] || []).length;
 
   return (
-    <VideoView
-      player={player}
-      style={styles.videoPlayerFull}
-      allowsFullscreen
-      allowsPictureInPicture
-    />
+    <TouchableOpacity
+      activeOpacity={0.7}
+      style={styles.cardContainer}
+      onPress={() => onSelectVideo(video)}
+    >
+      <View style={styles.thumbnailWrapper}>
+        <Image
+          source={{ uri: video.thumbnail_url }}
+          style={styles.cardThumbnail}
+          contentFit="cover"
+          transition={300}
+        />
+        <View style={styles.cardPlayIcon}>
+           <Ionicons name="play" size={18} color="#FFF" />
+        </View>
+        <View style={styles.durationBadge}>
+          <Text style={styles.durationText}>{video.size}</Text>
+        </View>
+      </View>
+
+      <View style={styles.cardInfo}>
+        <Text style={styles.cardTitle} numberOfLines={1}>
+          {video.titulo || video.filename.replace(".mp4", "").split("_")[0]}
+        </Text>
+        <Text style={styles.cardSubtitle} numberOfLines={1}>{video.arena}</Text>
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity onPress={() => toggleLike(video)} style={styles.actionButton}>
+            <Ionicons
+              name={isLiked ? "heart" : "heart-outline"}
+              size={16}
+              color={isLiked ? "#D30000" : "#8E8E93"}
+            />
+            <Text style={[styles.actionLabel, isLiked && { color: "#D30000" }]}>
+              {video.likes || 0}
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.actionButton}>
+            <Ionicons name="chatbubble-outline" size={14} color="#8E8E93" />
+            <Text style={styles.actionLabel}>{commentCount}</Text>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
   );
 };
 
@@ -67,22 +87,23 @@ export default function HomeScreen() {
   const [replays, setReplays] = useState<ReplayVideo[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
   const [comments, setComments] = useState<{ [key: string]: string[] }>({});
-  const [currentIndex, setCurrentIndex] = useState(0); // Índice do vídeo atualmente visível
-  const [isMuted, setIsMuted] = useState(true); // Estado de mudo global
-  const flatListRef = useRef<FlatList>(null);
+  const [favoriteReplays, setFavoriteReplays] = useState<string[]>([]); // Array de filenames de vídeos favoritos
 
   useEffect(() => {
     const init = async () => {
       try {
-        const [uid, savedComments] = await Promise.all([
+        const [uid, savedComments, savedFavorites] = await Promise.all([
           AsyncStorage.getItem("userId"),
           AsyncStorage.getItem("@video_comments"),
+          AsyncStorage.getItem("@favorite_replays"),
         ]);
         if (uid) setUserId(uid);
         if (savedComments) setComments(JSON.parse(savedComments));
+        if (savedFavorites) setFavoriteReplays(JSON.parse(savedFavorites));
         await carregarDados(uid);
       } catch (e) {
         console.error("Erro ao inicializar:", e);
@@ -145,6 +166,25 @@ export default function HomeScreen() {
     }
   };
 
+  const toggleFavorite = async (video: ReplayVideo) => {
+    if (!userId) {
+      console.warn("Usuário não logado — favorito ignorado");
+      return;
+    }
+
+    const filename = video.filename;
+    const isFavorited = favoriteReplays.includes(filename);
+    let updatedFavorites: string[];
+
+    if (isFavorited) {
+      updatedFavorites = favoriteReplays.filter(fav => fav !== filename);
+    } else {
+      updatedFavorites = [...favoriteReplays, filename];
+    }
+    setFavoriteReplays(updatedFavorites);
+    await AsyncStorage.setItem("@favorite_replays", JSON.stringify(updatedFavorites));
+  };
+
   const handleShare = async (video: ReplayVideo) => {
     try {
       const url = video.video_url ||
@@ -158,8 +198,9 @@ export default function HomeScreen() {
     }
   };
 
-  const addComment = async (videoId: string) => {
-    if (!commentText.trim()) return;
+  const addComment = async () => {
+    if (!selectedVideo || !commentText.trim()) return;
+    const videoId = selectedVideo.id;
     const newComments = {
       ...comments,
       [videoId]: [...(comments[videoId] || []), commentText.trim()],
@@ -169,83 +210,43 @@ export default function HomeScreen() {
     await AsyncStorage.setItem("@video_comments", JSON.stringify(newComments));
   };
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-    if (viewableItems && viewableItems.length > 0) {
-      setCurrentIndex(viewableItems[0].index);
-    }
-  }, []);
-
-  const viewabilityConfig = {
-    itemVisiblePercentThreshold: 50 // Considera o item visível se 50% dele estiver na tela
+  const handleVideoSelect = (video: ReplayVideo) => {
+    setSelectedVideo(video);
   };
 
-  const renderVideoItem = ({ item, index }: { item: ReplayVideo, index: number }) => {
-    const isCurrentVideo = index === currentIndex;
-    const isLiked = !!item.liked_by_me;
-    const commentCount = (comments[item.id] || []).length;
-    const videoUrl = item.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${item.filename}`;
-
+  const renderFeatured = () => {
+    if (replays.length === 0) return null;
     return (
-      <View style={styles.videoContainerFull}>
-        <NativeVideoPlayer
-          videoUrl={videoUrl}
-          isPlaying={isCurrentVideo} // Só toca o vídeo atual
-          isMuted={isMuted} // Respeita o estado de mudo global
-          onFinish={() => { /* Pode adicionar lógica para ir para o próximo vídeo */ }}
-          onFullscreenChange={async (fs) => {
-            if (fs) await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-            else await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
-          }}
-        />
-
-        {/* Header flutuante translúcido */}
-        <View style={styles.headerOverlay}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.headerTitle}>REPLAY<Text style={styles.highlight}>FLIX</Text></Text>
-            <View style={styles.onlineStatus} />
-          </View>
-          <TouchableOpacity style={styles.profileBtn}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }}
-              style={styles.avatar}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Informações do vídeo e ações laterais */}
-        <View style={styles.contentOverlay}>
-          <View style={styles.videoInfo}>
-            <Text style={styles.videoTitle} numberOfLines={2}>{item.titulo || item.arena}</Text>
-            <Text style={styles.videoSubtitle}>{item.arena} • {item.created_at}</Text>
-          </View>
-
-          <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity onPress={() => toggleLike(item)} style={styles.actionButtonVertical}>
-              <Ionicons
-                name={isLiked ? "heart" : "heart-outline"}
-                size={30}
-                color={isLiked ? "#D30000" : "#FFF"}
+      <Animated.View entering={FadeInDown.duration(800)} style={styles.featuredContainer}>
+        <Text style={styles.sectionHeader}>Destaques</Text>
+        <FlatList
+          data={replays.slice(0, 5)} // Apenas os 5 primeiros como destaque
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <TouchableOpacity activeOpacity={0.9} onPress={() => handleVideoSelect(item)} style={styles.featuredCard}>
+              <Image
+                source={{ uri: item.thumbnail_url }}
+                style={styles.featuredImage}
+                contentFit="cover"
+                transition={500}
               />
-              <Text style={styles.actionButtonText}>{item.likes || 0}</Text>
+              <View style={styles.featuredOverlay}>
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>NOVO LANCE</Text>
+                </View>
+                <Text style={styles.featuredTitle}>{item.titulo || item.arena}</Text>
+                <View style={styles.playButtonFeatured}>
+                  <Ionicons name="play" size={20} color="#000" />
+                  <Text style={styles.playButtonText}>Assistir Agora</Text>
+                </View>
+              </View>
             </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => { /* Abrir modal de comentários */ }} style={styles.actionButtonVertical}>
-              <Ionicons name="chatbubble-ellipses-outline" size={30} color="#FFF" />
-              <Text style={styles.actionButtonText}>{commentCount}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => handleShare(item)} style={styles.actionButtonVertical}>
-              <Ionicons name="share-social-outline" size={30} color="#FFF" />
-              <Text style={styles.actionButtonText}>Compartilhar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setIsMuted(!isMuted)} style={styles.actionButtonVertical}>
-              <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={30} color="#FFF" />
-              <Text style={styles.actionButtonText}>{isMuted ? "Mudo" : "Som"}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+          )}
+        />
+      </Animated.View>
     );
   };
 
@@ -257,65 +258,248 @@ export default function HomeScreen() {
     );
   }
 
+  const favoriteVideos = replays.filter(video => favoriteReplays.includes(video.filename));
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <FlatList
-        ref={flatListRef}
-        data={replays}
-        keyExtractor={(item) => item.id}
-        renderItem={renderVideoItem}
-        pagingEnabled // Habilita o "snap" para cada item, como no TikTok
-        showsVerticalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
+
+      <View style={styles.header}>
+        <View style={styles.logoContainer}>
+          <Text style={styles.headerTitle}>REPLAY<Text style={styles.highlight}>FLIX</Text></Text>
+          <View style={styles.onlineStatus} />
+        </View>
+        <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
+           <Image
+             source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }}
+             style={styles.avatar}
+           />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
         }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="videocam-off-outline" size={64} color="#2C2C2E" />
-            <Text style={styles.emptyText}>Nenhum lance encontrado.</Text>
+      >
+        {renderFeatured()}
+
+        {/* Seção: Novos Lances */}
+        <Text style={styles.sectionHeader}>Novos Lances</Text>
+        <FlatList
+          data={replays.slice(0, 10)} // Exemplo: os 10 primeiros como novos lances
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <VideoCard video={item} onSelectVideo={handleVideoSelect} toggleLike={toggleLike} userId={userId} comments={comments} />
+          )}
+          contentContainerStyle={styles.horizontalListContent}
+        />
+
+        {/* Seção: Top da Semana */}
+        <Text style={styles.sectionHeader}>Top da Semana</Text>
+        <FlatList
+          data={replays.filter(r => r.likes > 5).slice(0, 10)} // Exemplo: vídeos com mais de 5 likes
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <VideoCard video={item} onSelectVideo={handleVideoSelect} toggleLike={toggleLike} userId={userId} comments={comments} />
+          )}
+          contentContainerStyle={styles.horizontalListContent}
+        />
+
+        {/* Seção: Meus Favoritos (apenas se houver favoritos) */}
+        {userId && favoriteVideos.length > 0 && (
+          <>
+            <Text style={styles.sectionHeader}>Meus Favoritos</Text>
+            <FlatList
+              data={favoriteVideos}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <VideoCard video={item} onSelectVideo={handleVideoSelect} toggleLike={toggleLike} userId={userId} comments={comments} />
+              )}
+              contentContainerStyle={styles.horizontalListContent}
+            />
+          </>
+        )}
+
+        {/* Seção: Todos os Lances (Grid) */}
+        <Text style={styles.sectionHeader}>Todos os Lances</Text>
+        <FlatList
+          data={replays}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <VideoCard video={item} onSelectVideo={handleVideoSelect} toggleLike={toggleLike} userId={userId} comments={comments} />
+          )}
+          numColumns={2}
+          scrollEnabled={false} // Desabilita o scroll da FlatList interna
+          contentContainerStyle={styles.gridListContent}
+          columnWrapperStyle={styles.columnWrapper}
+        />
+      </ScrollView>
+
+      {/* Modal de Player de Vídeo (adaptado do anterior) */}
+      <Modal
+        visible={!!selectedVideo}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSelectedVideo(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setSelectedVideo(null)} style={styles.closeBtn}>
+              <Ionicons name="chevron-down" size={32} color="#FFF" />
+            </TouchableOpacity>
+            <View style={styles.modalHeaderInfo}>
+                <Text style={styles.modalTitle} numberOfLines={1}>
+                  {selectedVideo?.titulo || selectedVideo?.arena}
+                </Text>
+                <Text style={styles.modalSub}>{selectedVideo?.size} • {selectedVideo?.created_at}</Text>
+            </View>
+            <TouchableOpacity onPress={() => selectedVideo && handleShare(selectedVideo)} style={styles.modalShareBtn}>
+              <Ionicons name="share-outline" size={24} color="#FFF" />
+            </TouchableOpacity>
           </View>
-        }
-      />
+
+          <ScrollView bounces={false} style={styles.modalScroll}>
+            <View style={styles.videoContainer}>
+              {selectedVideo && (
+                Platform.OS === 'web' ? (
+                  <video
+                    src={selectedVideo.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
+                    controls
+                    autoPlay
+                    style={styles.webVideo}
+                  />
+                ) : (
+                  <VideoPlayerComponent
+                    videoUrl={selectedVideo.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
+                    onFullscreenChange={async (fs) => {
+                       if (fs) await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+                       else await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT);
+                    }}
+                  />
+                )
+              )}
+            </View>
+
+            <View style={styles.detailsContent}>
+              <View style={styles.interactionRow}>
+                <TouchableOpacity
+                    onPress={() => selectedVideo && toggleLike(selectedVideo)}
+                    style={styles.mainLikeButton}
+                >
+                    <Ionicons
+                        name={selectedVideo?.liked_by_me ? "heart" : "heart-outline"}
+                        size={28}
+                        color={selectedVideo?.liked_by_me ? "#D30000" : "#FFF"}
+                    />
+                    <Text style={styles.mainActionText}>
+                      {selectedVideo?.likes || 0} {(selectedVideo?.likes || 0) === 1 ? 'curtida' : 'curtidas'}
+                    </Text>
+                </TouchableOpacity>
+
+                {/* Botão de Favoritar */}
+                <TouchableOpacity
+                  onPress={() => selectedVideo && toggleFavorite(selectedVideo)}
+                  style={styles.mainLikeButton}
+                >
+                    <Ionicons
+                      name={selectedVideo && favoriteReplays.includes(selectedVideo.filename) ? "bookmark" : "bookmark-outline"}
+                      size={28}
+                      color={selectedVideo && favoriteReplays.includes(selectedVideo.filename) ? "#FFD700" : "#FFF"}
+                    />
+                    <Text style={styles.mainActionText}>Favoritar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.mainLikeButton}>
+                    <Ionicons name="download-outline" size={28} color="#FFF" />
+                    <Text style={styles.mainActionText}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.divider} />
+
+              <Text style={styles.sectionTitle}>Comentários ({(selectedVideo && comments[selectedVideo.id] || []).length})</Text>
+
+              <View style={styles.commentInputRow}>
+                <TextInput
+                  style={styles.commentInput}
+                  placeholder="Comente este lance..."
+                  placeholderTextColor="#8E8E93"
+                  value={commentText}
+                  onChangeText={setCommentText}
+                />
+                <TouchableOpacity onPress={addComment} style={styles.sendButton}>
+                  <Text style={styles.sendButtonText}>Enviar</Text>
+                </TouchableOpacity>
+              </View>
+
+              {(selectedVideo && comments[selectedVideo.id] || []).map((comment, i) => (
+                <View key={i} style={styles.commentContainer}>
+                  <Image
+                    source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }} // Avatar genérico
+                    style={styles.commentAvatar}
+                  />
+                  <View style={styles.commentContent}>
+                    <Text style={styles.commentAuthor}>Usuário Anônimo</Text>
+                    <Text style={styles.commentText}>{comment}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+// Componente de Player de Vídeo dedicado para o modal
+const VideoPlayerComponent = ({ videoUrl, onFullscreenChange }: { videoUrl: string, onFullscreenChange: (isFullscreen: boolean) => void }) => {
+  const player = useVideoPlayer(videoUrl, p => {
+    p.loop = false; // Não faz loop no player dedicado
+    p.muted = false; // Não começa mutado no player dedicado
+  });
+
+  useEffect(() => {
+    // Tenta dar play automaticamente quando o componente é montado ou o URL do vídeo muda
+    player.play();
+  }, [player, videoUrl]);
+
+  return (
+    <VideoView
+      player={player}
+      style={styles.videoPlayerModal}
+      allowsFullscreen
+      allowsPictureInPicture
+    />
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
   },
-  videoContainerFull: {
-    width: width,
-    height: height,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
+  scrollView: {
+    flex: 1,
   },
-  videoPlayerFull: {
-    width: '100%',
-    height: '100%',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    right: 0,
-  },
-  headerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingTop: Platform.OS === 'android' ? 30 : 50, // Ajuste para status bar
-    zIndex: 10,
-    backgroundColor: 'rgba(0,0,0,0.3)', // Translúcido
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 40,
+    paddingBottom: 10,
+    backgroundColor: '#0A0A0A', // Fundo sólido
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
   },
   logoContainer: {
     flexDirection: 'row',
@@ -346,43 +530,159 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#FFF',
   },
-  contentOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingHorizontal: 15,
-    paddingBottom: 80, // Espaço para a tab bar
-    zIndex: 9,
-  },
-  videoInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  videoTitle: {
+  sectionHeader: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#FFF',
-    marginBottom: 5,
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 15,
   },
-  videoSubtitle: {
-    fontSize: 14,
-    color: '#EEE',
-  },
-  actionButtonsContainer: {
-    alignItems: 'center',
-  },
-  actionButtonVertical: {
+  featuredContainer: {
     marginBottom: 20,
+  },
+  featuredCard: {
+    width: ITEM_WIDTH,
+    height: ITEM_WIDTH * 0.6,
+    marginRight: 10,
+    borderRadius: 10,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  featuredImage: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'space-between',
+    padding: 10,
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    backgroundColor: '#D30000',
+    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
     alignItems: 'center',
   },
-  actionButtonText: {
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFF',
+    marginRight: 5,
+  },
+  liveText: {
     color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  featuredTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  playButtonFeatured: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+  },
+  playButtonText: {
+    color: '#000',
+    marginLeft: 5,
+    fontWeight: 'bold',
+  },
+  horizontalListContent: {
+    paddingHorizontal: 15,
+    paddingBottom: 10,
+  },
+  gridListContent: {
+    paddingHorizontal: 15,
+    paddingBottom: 20,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  cardContainer: {
+    width: CARD_WIDTH,
+    marginBottom: 10,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginRight: 8, // Espaçamento entre os cards no grid
+  },
+  thumbnailWrapper: {
+    width: '100%',
+    height: CARD_WIDTH * 0.7,
+    position: 'relative',
+  },
+  cardThumbnail: {
+    width: '100%',
+    height: '100%',
+  },
+  cardPlayIcon: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -15 }, { translateY: -15 }],
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  durationBadge: {
+    position: 'absolute',
+    bottom: 5,
+    right: 5,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  durationText: {
+    color: '#FFF',
+    fontSize: 10,
+  },
+  cardInfo: {
+    padding: 10,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 2,
+  },
+  cardSubtitle: {
     fontSize: 12,
-    marginTop: 5,
+    color: '#AAA',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  actionLabel: {
+    color: '#8E8E93',
+    fontSize: 12,
+    marginLeft: 4,
   },
   emptyContainer: {
     flex: 1,
@@ -394,5 +694,133 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 16,
     marginTop: 10,
+  },
+  // Estilos do Modal de Player de Vídeo
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 40,
+    backgroundColor: '#0A0A0A',
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  closeBtn: {
+    padding: 5,
+  },
+  modalHeaderInfo: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFF',
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#AAA',
+  },
+  modalShareBtn: {
+    padding: 5,
+  },
+  modalScroll: {
+    flex: 1,
+    backgroundColor: '#1C1C1E',
+  },
+  videoContainer: {
+    width: '100%',
+    height: width * 0.5625, // Proporção 16:9
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  videoPlayerModal: {
+    width: '100%',
+    height: '100%',
+  },
+  webVideo: {
+    width: '100%',
+    height: '100%',
+  },
+  detailsContent: {
+    padding: 15,
+  },
+  interactionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  mainLikeButton: {
+    alignItems: 'center',
+  },
+  mainActionText: {
+    color: '#FFF',
+    fontSize: 12,
+    marginTop: 5,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#2C2C2E',
+    marginVertical: 15,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 10,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: '#3A3A3C',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    color: '#FFF',
+    marginRight: 10,
+  },
+  sendButton: {
+    backgroundColor: '#D30000',
+    borderRadius: 20,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  sendButtonText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+  },
+  commentContainer: {
+    flexDirection: 'row',
+    marginBottom: 10,
+  },
+  commentAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    marginRight: 10,
+  },
+  commentContent: {
+    flex: 1,
+    backgroundColor: '#3A3A3C',
+    borderRadius: 10,
+    padding: 10,
+  },
+  commentAuthor: {
+    fontWeight: 'bold',
+    color: '#FFF',
+    marginBottom: 2,
+  },
+  commentText: {
+    color: '#FFF',
   },
 });
