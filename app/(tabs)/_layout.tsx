@@ -6,7 +6,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Esconde o cabeçalho duplo
+        headerShown: false, // Esconde o cabeçalho duplo (agora gerenciado por overlay no index.tsx)
         tabBarStyle: {
           backgroundColor: '#0A0A0A', // Fundo preto premium
           borderTopWidth: 1,
