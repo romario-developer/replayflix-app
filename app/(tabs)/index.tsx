@@ -17,8 +17,16 @@ import {
     View,
     Dimensions,
     Share,
-    ActivityIndicator
+    ActivityIndicator,
+    LayoutAnimation,
+    UIManager
 } from "react-native";
+
+if (Platform.OS === 'android') {
+  if (UIManager.setLayoutAnimationEnabledExperimental) {
+    UIManager.setLayoutAnimationEnabledExperimental(true);
+  }
+}
 import { useVideoPlayer, VideoView } from "expo-video";
 import { getReplays, likeReplay, unlikeReplay, ReplayVideo } from "../../services/api";
 import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
@@ -383,8 +391,18 @@ export default function HomeScreen() {
     await AsyncStorage.setItem("@video_comments", JSON.stringify(newComments));
   };
 
-  const handleVideoSelect = (video: ReplayVideo) => {
+  const openCommentsWithAnimation = (video: ReplayVideo) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelectedVideo(video);
+  };
+
+  const closeCommentsWithAnimation = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setSelectedVideo(null);
+  };
+
+  const handleVideoSelect = (video: ReplayVideo) => {
+    openCommentsWithAnimation(video);
   };
 
   const renderFeatured = () => {
@@ -449,49 +467,41 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        key="feed"
-        data={replays}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={LiveStoriesBar}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
-        }
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        renderItem={({ item }) => (
-          <InstagramFeedCard
-            video={item}
-            toggleLike={toggleLike}
-            toggleFavorite={toggleFavorite}
-            isFavorite={favoriteReplays.includes(item.filename)}
-            isActive={item.id === activeVideoId}
-            handleShare={handleShare}
-            openComments={setSelectedVideo}
-          />
-        )}
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
+      <View style={{ flex: selectedVideo ? 0.35 : 1, width: '100%', overflow: 'hidden' }}>
+        <FlatList
+          key="feed"
+          data={replays}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={LiveStoriesBar}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
+          }
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          renderItem={({ item }) => (
+            <InstagramFeedCard
+              video={item}
+              toggleLike={toggleLike}
+              toggleFavorite={toggleFavorite}
+              isFavorite={favoriteReplays.includes(item.filename)}
+              isActive={item.id === activeVideoId}
+              handleShare={handleShare}
+              openComments={openCommentsWithAnimation}
+            />
+          )}
+          contentContainerStyle={{ paddingBottom: 20 }}
+        />
+      </View>
 
-      {/* Modal de Comentários */}
-      <Modal
-        visible={!!selectedVideo}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSelectedVideo(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={{ flex: 1 }} 
-            activeOpacity={1} 
-            onPress={() => setSelectedVideo(null)} 
-          />
+      {/* Painel de Comentários Integrado (Substitui o Modal) */}
+      {!!selectedVideo && (
+        <View style={{ flex: 0.65, width: '100%' }}>
           <View style={styles.commentsSheet}>
             <View style={styles.commentsHeader}>
               <Text style={styles.commentsTitle}>
                 Comentários ({(selectedVideo && comments[selectedVideo.id] || []).length})
               </Text>
-              <TouchableOpacity onPress={() => setSelectedVideo(null)}>
+              <TouchableOpacity onPress={closeCommentsWithAnimation}>
                 <Ionicons name="close" size={24} color="#FFF" />
               </TouchableOpacity>
             </View>
@@ -528,7 +538,7 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+      )}
     </View>
   );
 }
@@ -779,10 +789,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   commentsSheet: {
+    flex: 1,
     backgroundColor: '#1A1A1A',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    height: '65%',
     padding: 20,
     paddingBottom: Platform.OS === 'ios' ? 40 : 20,
   },
