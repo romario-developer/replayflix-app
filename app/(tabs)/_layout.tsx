@@ -1,29 +1,39 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
+import { Platform } from 'react-native';
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // O cabeçalho é gerenciado diretamente no index.tsx
+        headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0A0A0A', // Fundo preto premium
+          backgroundColor: '#0A0A0A',
           borderTopWidth: 1,
-          borderTopColor: '#222', // Linha sutil separando os vídeos
-          height: 60,
-          paddingBottom: 10,
-          paddingTop: 5,
+          borderTopColor: '#222',
+          height: Platform.OS === 'ios' ? 88 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 30 : 10,
+          paddingTop: 8,
+          maxWidth: 800,
+          alignSelf: 'center',
+          width: '100%',
         },
-        tabBarActiveTintColor: '#D30000', // Vermelho ativo
-        tabBarInactiveTintColor: '#666666', // Cinza inativo
+        tabBarActiveTintColor: '#D30000',
+        tabBarInactiveTintColor: '#666',
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: 'bold',
+        }
       }}>
       
       <Tabs.Screen
         name="index"
         options={{
           title: 'Início',
-          tabBarIcon: ({ color }) => <Ionicons size={24} name="home" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons size={24} name={focused ? "home" : "home-outline"} color={color} />
+          ),
         }}
       />
       
@@ -32,7 +42,9 @@ export default function TabLayout() {
         options={{
           title: 'Perfil',
           tabBarLabel: 'Perfil', 
-          tabBarIcon: ({ color }) => <Ionicons size={24} name="person" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons size={24} name={focused ? "person" : "person-outline"} color={color} />
+          ),
         }}
       />
     </Tabs>

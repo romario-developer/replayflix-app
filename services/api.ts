@@ -1,6 +1,17 @@
 import axios from "axios";
+import Constants from "expo-constants";
 
-const API_URL = 'https://replayflix-backend.onrender.com/api';
+const getApiUrl = () => {
+  if (__DEV__) {
+    // Busca o IP local do Metro Bundler para funcionar em dispositivos físicos/emuladores
+    const debuggerHost = Constants.expoConfig?.hostUri || "";
+    const ip = debuggerHost.split(":")[0];
+    return ip ? `http://${ip}:3000/api` : "http://localhost:3000/api";
+  }
+  return "https://replayflix-backend.onrender.com/api";
+};
+
+export const API_URL = getApiUrl();
 
 // ---------------------------------------------------------
 //  Tipos
@@ -117,4 +128,40 @@ export const vincularReplay = async (filename: string, userId: string | number |
     console.error("Erro ao vincular:", error);
     return null;
   }
+};
+
+// ---------------------------------------------------------
+//  7. Autenticação (Login / Cadastro)
+// ---------------------------------------------------------
+export const loginUser = async (identificador: string, password: string) => {
+  const response = await axios.post(`${API_URL}/login`, { identificador, password });
+  return response.data;
+};
+
+export const cadastrarUser = async (nome: string, username: string, email: string, password: string) => {
+  const response = await axios.post(`${API_URL}/cadastrar`, { nome, username, email, password });
+  return response.data;
+};
+
+// ---------------------------------------------------------
+//  8. Perfil do Usuário
+// ---------------------------------------------------------
+export const getUsuario = async (id: string | number) => {
+  const response = await axios.get(`${API_URL}/usuarios/${id}`);
+  return response.data;
+};
+
+export const updateUsuario = async (id: string | number, userData: { nome: string; username: string; email: string }) => {
+  const response = await axios.put(`${API_URL}/usuarios/${id}`, userData);
+  return response.data;
+};
+
+export const deleteUsuario = async (id: string | number) => {
+  const response = await axios.delete(`${API_URL}/usuarios/${id}`);
+  return response.data;
+};
+
+export const updateSenhaUsuario = async (id: string | number, senhaAtual: string, novaSenha: string) => {
+  const response = await axios.put(`${API_URL}/usuarios/${id}/senha`, { senhaAtual, novaSenha });
+  return response.data;
 };

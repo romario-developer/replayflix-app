@@ -14,6 +14,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { loginUser, cadastrarUser } from "../services/api";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -63,22 +64,14 @@ export default function LoginScreen() {
         let loginLimpo = identificador.trim().toLowerCase();
         if (loginLimpo.startsWith("@")) loginLimpo = loginLimpo.substring(1);
 
-        const response = await fetch(
-          "https://replayflix-backend.onrender.com/api/login",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ identificador: loginLimpo, password }),
-          },
-        );
-        const data = await response.json();
-
-        if (response.ok) {
+        try {
+          const data = await loginUser(loginLimpo, password);
           await AsyncStorage.setItem("userId", data.usuario.id.toString());
           await AsyncStorage.setItem("userName", data.usuario.nome);
           router.replace("/(tabs)");
-        } else {
-          mostrarAlerta("Acesso Negado", data.erro || "Erro ao fazer login.");
+        } catch (err: any) {
+          const erroMsg = err.response?.data?.erro || "Erro ao fazer login.";
+          mostrarAlerta("Acesso Negado", erroMsg);
         }
       } else {
         if (!nome || !username || !email || !password) {
@@ -94,22 +87,8 @@ export default function LoginScreen() {
         if (usernameLimpo.startsWith("@"))
           usernameLimpo = usernameLimpo.substring(1);
 
-        const response = await fetch(
-          "https://replayflix-backend.onrender.com/api/cadastrar",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              nome,
-              username: usernameLimpo,
-              email,
-              password,
-            }),
-          },
-        );
-        const data = await response.json();
-
-        if (response.ok) {
+        try {
+          const data = await cadastrarUser(nome, usernameLimpo, email, password);
           mostrarAlerta(
             "Bem-vindo à Arena!",
             "Sua conta foi criada com sucesso. Agora você pode fazer o login.",
@@ -117,8 +96,9 @@ export default function LoginScreen() {
           setPassword("");
           setIdentificador(usernameLimpo);
           setIsLogin(true);
-        } else {
-          mostrarAlerta("Ops!", data.erro || "Erro ao criar conta.");
+        } catch (err: any) {
+          const erroMsg = err.response?.data?.erro || "Erro ao criar conta.";
+          mostrarAlerta("Ops!", erroMsg);
         }
       }
     } catch (error) {

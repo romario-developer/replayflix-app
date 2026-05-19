@@ -18,6 +18,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { getReplays, deleteReplay, updateUsuario, deleteUsuario } from "../../services/api";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -134,32 +135,22 @@ export default function ProfileScreen() {
 
     try {
       const userId = await AsyncStorage.getItem("userId");
-      const response = await fetch(
-        `https://replayflix-backend.onrender.com/api/usuarios/${userId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nome: editNome,
-            username: editUsername,
-            email: editEmail,
-          }),
-        },
-      );
+      if (!userId) return;
 
-      const data = await response.json();
+      const data = await updateUsuario(userId, {
+        nome: editNome,
+        username: editUsername,
+        email: editEmail,
+      });
 
-      if (response.ok) {
-        setNomeUsuario(editNome);
-        setArrobaUsuario(editUsername.trim().toLowerCase().replace("@", ""));
-        setEmailUsuario(editEmail.trim().toLowerCase());
-        await AsyncStorage.setItem("userName", editNome);
-        setModalEditPerfilVisible(false);
-      } else {
-        Alert.alert("Erro", data.erro || "Não foi possível atualizar.");
-      }
-    } catch {
-      Alert.alert("Erro", "Falha de conexão com o servidor.");
+      setNomeUsuario(editNome);
+      setArrobaUsuario(editUsername.trim().toLowerCase().replace("@", ""));
+      setEmailUsuario(editEmail.trim().toLowerCase());
+      await AsyncStorage.setItem("userName", editNome);
+      setModalEditPerfilVisible(false);
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.erro || "Não foi possível atualizar.";
+      Alert.alert("Erro", errorMsg);
     }
   };
 
@@ -175,17 +166,11 @@ export default function ProfileScreen() {
     setLoadingVideos(true);
     try {
       const userId = await AsyncStorage.getItem("userId");
-      const response = await fetch(
-        "https://replayflix-backend.onrender.com/api/replays",
+      const data = await getReplays();
+      const filtrados = data.filter(
+        (video: any) => video.user_id && video.user_id.toString() === userId,
       );
-      const data = await response.json();
-
-      if (response.ok) {
-        const filtrados = data.filter(
-          (video: any) => video.user_id && video.user_id.toString() === userId,
-        );
-        setMeusVideos(filtrados);
-      }
+      setMeusVideos(filtrados);
     } catch {
       Alert.alert("Erro", "Não foi possível carregar seus vídeos.");
     } finally {
@@ -211,13 +196,12 @@ export default function ProfileScreen() {
     }
   };
 
+
+
   const deletarVideo = async (filename: string) => {
     try {
-      const response = await fetch(
-        `https://replayflix-backend.onrender.com/api/replays/${filename}`,
-        { method: "DELETE" },
-      );
-      if (response.ok) {
+      const data = await deleteReplay(filename);
+      if (data.success) {
         setMeusVideos((videosAtuais) =>
           videosAtuais.filter((v) => v.filename !== filename),
         );
@@ -255,16 +239,10 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               const userId = await AsyncStorage.getItem("userId");
-              const response = await fetch(
-                `https://replayflix-backend.onrender.com/api/usuarios/${userId}`,
-                { method: "DELETE" },
-              );
-              if (response.ok) {
-                await AsyncStorage.clear();
-                router.replace("/login");
-              } else {
-                Alert.alert("Erro", "Não foi possível excluir a conta.");
-              }
+              if (!userId) return;
+              await deleteUsuario(userId);
+              await AsyncStorage.clear();
+              router.replace("/login");
             } catch {
               Alert.alert("Erro", "Falha de conexão.");
             }
@@ -544,7 +522,7 @@ export default function ProfileScreen() {
             <View style={styles.modalVideoHeader}>
               <Text style={styles.modalTitle}>Meus Vídeos</Text>
               <TouchableOpacity onPress={() => setModalGerenciarVisible(false)}>
-                <Ionicons name="close-circle" size={30} color="#666" />
+                <Ionicons name="close-circle" size={30} color="#FF6B00" />
               </TouchableOpacity>
             </View>
             {loadingVideos ? (
@@ -595,10 +573,10 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  pageBackground: { flex: 1, backgroundColor: "#000" },
+  pageBackground: { flex: 1, backgroundColor: "#F4F4F6" },
   container: {
     flexGrow: 1,
-    backgroundColor: "#111",
+    backgroundColor: "#F4F4F6",
     width: "100%",
     maxWidth: 800,
     alignSelf: "center",
@@ -609,17 +587,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 50,
+    paddingTop: Platform.OS === 'android' ? 45 : 55,
     paddingBottom: 20,
-    backgroundColor: "#0A0A0A",
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#EBEBEB",
   },
-  headerTitle: { fontSize: 24, fontWeight: "bold", color: "#FFF" },
+  headerTitle: { fontSize: 24, fontWeight: "bold", color: "#1C1C1E" },
   profileCard: {
     alignItems: "center",
     paddingVertical: 30,
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: "#EBEBEB",
   },
   avatarContainer: { position: "relative", marginBottom: 15 },
   avatar: {
@@ -627,35 +607,34 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     borderWidth: 3,
-    borderColor: "#D30000",
+    borderColor: "#FF6B00",
   },
   editAvatarBtn: {
     position: "absolute",
     bottom: 0,
     right: 0,
-    backgroundColor: "#D30000",
+    backgroundColor: "#FF6B00",
     width: 36,
     height: 36,
     borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 3,
-    borderColor: "#1A1A1A",
+    borderColor: "#FFFFFF",
   },
-
   nameRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
   },
-  userName: { fontSize: 22, fontWeight: "bold", color: "#FFF" },
+  userName: { fontSize: 22, fontWeight: "bold", color: "#1C1C1E" },
   userArroba: {
     fontSize: 15,
-    color: "#D30000",
+    color: "#FF6B00",
     fontWeight: "600",
     marginTop: 2,
   },
-  userEmail: { fontSize: 13, color: "#666", marginTop: 2 }, // ESTILO DO EMAIL NA TELA
+  userEmail: { fontSize: 13, color: "#8E8E93", marginTop: 2 },
 
   positionContainer: {
     flexDirection: "row",
@@ -667,7 +646,7 @@ const styles = StyleSheet.create({
   },
   userTeam: {
     fontSize: 13,
-    color: "#888",
+    color: "#8E8E93",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
@@ -675,7 +654,7 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: "row",
     marginTop: 25,
-    backgroundColor: "#111",
+    backgroundColor: "#FFFFFF",
     borderRadius: 15,
     paddingVertical: 15,
     paddingHorizontal: 20,
@@ -683,15 +662,15 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     justifyContent: "space-around",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#EBEBEB",
   },
   statBox: { alignItems: "center" },
-  statNumber: { fontSize: 20, fontWeight: "900", color: "#FFF" },
-  statLabel: { fontSize: 12, color: "#888", marginTop: 4 },
-  statDivider: { width: 1, backgroundColor: "#333" },
+  statNumber: { fontSize: 20, fontWeight: "900", color: "#1C1C1E" },
+  statLabel: { fontSize: 12, color: "#8E8E93", marginTop: 4 },
+  statDivider: { width: 1, backgroundColor: "#EBEBEB" },
   menuContainer: { paddingHorizontal: 20, paddingTop: 30 },
   sectionTitle: {
-    color: "#666",
+    color: "#8E8E93",
     fontSize: 13,
     fontWeight: "bold",
     marginBottom: 10,
@@ -699,12 +678,12 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   menuCard: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#FFFFFF",
     borderRadius: 16,
     overflow: "hidden",
     marginBottom: 25,
     borderWidth: 1,
-    borderColor: "#222",
+    borderColor: "#EBEBEB",
   },
   menuItem: {
     flexDirection: "row",
@@ -712,36 +691,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: "#EBEBEB",
   },
   menuItemLeft: { flexDirection: "row", alignItems: "center" },
   iconBox: {
     width: 34,
     height: 34,
     borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#FFEAD6",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 15,
   },
-  menuItemText: { color: "#FFF", fontSize: 16, fontWeight: "500" },
+  menuItemText: { color: "#1C1C1E", fontSize: 16, fontWeight: "500" },
 
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: "#EBEBEB",
   },
   logoutText: {
-    color: "#FFF",
+    color: "#1C1C1E",
     opacity: 0.8,
     fontSize: 16,
     fontWeight: "500",
     marginLeft: 15,
   },
 
-  // ESTILO DO BOTÃO DE APAGAR CONTA
   deleteAccountButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -757,18 +735,19 @@ const styles = StyleSheet.create({
 
   versionText: {
     textAlign: "center",
-    color: "#444",
+    color: "#8E8E93",
     fontSize: 12,
     marginTop: 10,
   },
 
+  // Modal Gerenciador de Vídeos
   modalVideoOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   modalVideoWrapper: {
-    backgroundColor: "#111",
+    backgroundColor: "#FFFFFF",
     width: "100%",
     height: "75%",
     borderTopLeftRadius: 25,
@@ -781,15 +760,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 25,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: "#EBEBEB",
   },
-  modalTitle: { color: "#FFF", fontSize: 20, fontWeight: "bold" },
+  modalTitle: { color: "#1C1C1E", fontSize: 20, fontWeight: "bold" },
   emptyText: {
-    color: "#666",
+    color: "#8E8E93",
     textAlign: "center",
     marginTop: 40,
     fontSize: 16,
   },
+  
+  // Lista de Vídeos
   videoListItem: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -797,27 +778,32 @@ const styles = StyleSheet.create({
     backgroundColor: "#1A1A1A",
     padding: 15,
     borderRadius: 12,
-    marginBottom: 15,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: "#222",
   },
-  videoListInfo: { flexDirection: "row", alignItems: "center", flex: 1 },
+  videoListInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
   videoListTitle: {
     color: "#FFF",
     fontSize: 16,
     fontWeight: "bold",
-    marginBottom: 4,
   },
-  videoListSub: { color: "#888", fontSize: 12 },
+  videoListSub: {
+    color: "#8E8E93",
+    fontSize: 12,
+    marginTop: 4,
+  },
   deleteBtn: {
-    backgroundColor: "#D30000",
-    width: 40,
-    height: 40,
+    padding: 10,
+    backgroundColor: "rgba(211, 0, 0, 0.15)",
     borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
   },
 
+  // Modais de Formulário
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.85)",
@@ -828,7 +814,7 @@ const styles = StyleSheet.create({
   modalBox: {
     width: "100%",
     maxWidth: 400,
-    backgroundColor: "#111",
+    backgroundColor: "#1A1A1A",
     borderRadius: 16,
     padding: 25,
     borderWidth: 1,
@@ -841,20 +827,20 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   inputLabel: {
-    color: "#888",
+    color: "#8E8E93",
     fontSize: 14,
     marginBottom: 8,
     fontWeight: "bold",
   },
   input: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#0A0A0A",
     color: "#FFF",
     borderRadius: 12,
     paddingHorizontal: 15,
     paddingVertical: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#222",
     marginBottom: 20,
   },
   saveButton: {
