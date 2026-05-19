@@ -98,8 +98,8 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
 
   const [isBuffering, setIsBuffering] = useState(false);
   useEffect(() => {
-    const subscription = player.addListener('statusChange', (status) => {
-      if (status === 'loading') {
+    const subscription = player.addListener('statusChange', (payload) => {
+      if (payload.status === 'loading') {
         setIsBuffering(true);
       } else {
         setIsBuffering(false);
@@ -543,27 +543,7 @@ export default function HomeScreen() {
   );
 }
 
-// Componente de Player de Vídeo dedicado para o modal
-const VideoPlayerComponent = ({ videoUrl, onFullscreenChange }: { videoUrl: string, onFullscreenChange: (isFullscreen: boolean) => void }) => {
-  const player = useVideoPlayer(videoUrl, p => {
-    p.loop = false; // Não faz loop no player dedicado
-    p.muted = false; // Não começa mutado no player dedicado
-  });
 
-  useEffect(() => {
-    // Tenta dar play automaticamente quando o componente é montado ou o URL do vídeo muda
-    player.play();
-  }, [player, videoUrl]);
-
-  return (
-    <VideoView
-      player={player}
-      style={styles.videoPlayerModal}
-      allowsFullscreen
-      allowsPictureInPicture
-    />
-  );
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -780,6 +760,84 @@ const styles = StyleSheet.create({
   feedDescriptionText: {
     color: '#CCC',
     fontSize: 14,
+  },
+  
+  // Destaques da Galera
+  featuredContainer: {
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  sectionHeader: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 15,
+    marginBottom: 10,
+  },
+  featuredCard: {
+    width: ITEM_WIDTH,
+    height: ITEM_WIDTH * 0.6,
+    marginLeft: 15,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  featuredImage: {
+    width: '100%',
+    height: '100%',
+  },
+  featuredOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 15,
+    paddingTop: 40,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(211,0,0,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFF',
+    marginRight: 4,
+  },
+  liveText: {
+    color: '#FFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  featuredTitle: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  playButtonFeatured: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  playButtonText: {
+    color: '#000',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginLeft: 4,
   },
   
   // Comments Modal Styles
