@@ -49,6 +49,7 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     carregarPerfil();
+    carregarEstatisticas();
   }, []);
 
   const carregarPerfil = async () => {
@@ -79,12 +80,21 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleTrocarFoto = async () => {
-    if (Platform.OS === "web") {
-      alert("Para trocar a foto, use o aplicativo no celular!");
-      return;
+  const carregarEstatisticas = async () => {
+    try {
+      const userId = await AsyncStorage.getItem("userId");
+      if (!userId) return;
+      const data = await getReplays();
+      const filtrados = data.filter((video: any) => video.user_id && video.user_id.toString() === userId);
+      setTotalVideos(filtrados.length);
+      const arenasUnicas = new Set(filtrados.map((v: any) => v.arena));
+      setTotalArenas(arenasUnicas.size);
+    } catch (error) {
+      console.log("Erro ao carregar estatisticas:", error);
     }
+  };
 
+  const handleTrocarFoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (status !== "granted") {
