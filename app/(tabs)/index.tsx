@@ -19,7 +19,8 @@ import {
     Share,
     ActivityIndicator,
     LayoutAnimation,
-    UIManager
+    UIManager,
+    KeyboardAvoidingView
 } from "react-native";
 
 if (Platform.OS === 'android') {
@@ -135,7 +136,8 @@ const InstagramFeedCard = ({
   isFavorite,
   isActive,
   handleShare,
-  openComments
+  openComments,
+  commentCount
 }: {
   video: ReplayVideo;
   toggleLike: (video: ReplayVideo) => void;
@@ -144,6 +146,7 @@ const InstagramFeedCard = ({
   isActive: boolean;
   handleShare: (video: ReplayVideo) => void;
   openComments: (video: ReplayVideo) => void;
+  commentCount?: number;
 }) => {
   const isLiked = !!video.liked_by_me;
   const userAvatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80";
@@ -208,6 +211,13 @@ const InstagramFeedCard = ({
           <Text style={styles.feedCardTextUsername}>{video.arena} </Text>
           <Text style={styles.feedDescriptionText}>{formatVideoDate(video.created_at)}</Text>
         </View>
+        {commentCount !== undefined && commentCount > 0 && (
+          <TouchableOpacity onPress={() => openComments(video)}>
+            <Text style={{ color: '#8E8E93', marginTop: 5, fontSize: 14 }}>
+              Ver todos os {commentCount} comentários
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -500,6 +510,7 @@ export default function HomeScreen() {
                 isActive={item.id === activeVideoId}
                 handleShare={handleShare}
                 openComments={openCommentsWithAnimation}
+                commentCount={(comments[item.id] || []).length}
               />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
@@ -509,7 +520,10 @@ export default function HomeScreen() {
 
       {/* Painel de Comentários Integrado (Substitui o Modal) */}
       {!!selectedVideo && (
-        <View style={{ flex: 0.65, width: '100%' }}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 0.65, width: '100%' }}
+        >
           <View style={styles.commentsSheet}>
             <View style={styles.commentsHeader}>
               <Text style={styles.commentsTitle}>
@@ -551,7 +565,7 @@ export default function HomeScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       )}
     </View>
   );
