@@ -312,7 +312,11 @@ export default function ProfileScreen() {
 
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
-            <Image source={{ uri: imagemPerfil }} style={styles.avatar} />
+            <Image 
+              source={{ uri: imagemPerfil }} 
+              style={styles.avatar} 
+              onError={() => setImagemPerfil(imagemPadrao)}
+            />
             <TouchableOpacity
               style={styles.editAvatarBtn}
               onPress={handleTrocarFoto}

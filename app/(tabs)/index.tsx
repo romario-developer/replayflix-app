@@ -137,7 +137,9 @@ const InstagramFeedCard = ({
   isActive,
   handleShare,
   openComments,
-  commentCount
+  commentCount,
+  currentUserId,
+  currentUserAvatar
 }: {
   video: ReplayVideo;
   toggleLike: (video: ReplayVideo) => void;
@@ -147,15 +149,20 @@ const InstagramFeedCard = ({
   handleShare: (video: ReplayVideo) => void;
   openComments: (video: ReplayVideo) => void;
   commentCount?: number;
+  currentUserId?: string | null;
+  currentUserAvatar?: string;
 }) => {
   const isLiked = !!video.liked_by_me;
-  const userAvatar = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80";
+  const isMyVideo = video.user_id && currentUserId && video.user_id.toString() === currentUserId.toString();
+  const avatarToUse = isMyVideo && currentUserAvatar
+    ? currentUserAvatar
+    : `https://ui-avatars.com/api/?name=${encodeURIComponent(video.arena || 'Arena')}&background=random&color=fff`;
 
   return (
     <View style={styles.feedCardContainer}>
       {/* Cabeçalho do Card */}
       <View style={styles.feedCardHeader}>
-        <Image source={{ uri: userAvatar }} style={styles.feedCardAvatar} />
+        <Image source={{ uri: avatarToUse }} style={styles.feedCardAvatar} />
         <View style={styles.feedCardHeaderTexts}>
           <Text style={styles.feedCardUsername}>{video.titulo || video.arena}</Text>
         </View>
@@ -396,10 +403,10 @@ export default function HomeScreen() {
 
   const addComment = async () => {
     if (!selectedVideo || !commentText.trim()) return;
-    const videoId = selectedVideo.id;
+    const videoKey = selectedVideo.filename;
     const newComments = {
       ...comments,
-      [videoId]: [...(comments[videoId] || []), commentText.trim()],
+      [videoKey]: [...(comments[videoKey] || []), commentText.trim()],
     };
     setComments(newComments);
     setCommentText("");
@@ -510,7 +517,9 @@ export default function HomeScreen() {
                 isActive={item.id === activeVideoId}
                 handleShare={handleShare}
                 openComments={openCommentsWithAnimation}
-                commentCount={(comments[item.id] || []).length}
+                commentCount={(comments[item.filename] || []).length}
+                currentUserId={userId}
+                currentUserAvatar={userAvatar}
               />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
@@ -527,7 +536,7 @@ export default function HomeScreen() {
           <View style={styles.commentsSheet}>
             <View style={styles.commentsHeader}>
               <Text style={styles.commentsTitle}>
-                Comentários ({(selectedVideo && comments[selectedVideo.id] || []).length})
+                Comentários ({(selectedVideo && comments[selectedVideo.filename] || []).length})
               </Text>
               <TouchableOpacity onPress={closeCommentsWithAnimation}>
                 <Ionicons name="close" size={24} color="#FFF" />
@@ -535,7 +544,7 @@ export default function HomeScreen() {
             </View>
 
             <ScrollView style={styles.commentsScroll}>
-              {(selectedVideo && comments[selectedVideo.id] || []).map((comment, i) => (
+              {(selectedVideo && comments[selectedVideo.filename] || []).map((comment, i) => (
                 <View key={i} style={styles.commentContainer}>
                   <Image
                     source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }}
@@ -547,7 +556,7 @@ export default function HomeScreen() {
                   </View>
                 </View>
               ))}
-              {(selectedVideo && (!comments[selectedVideo.id] || comments[selectedVideo.id].length === 0)) && (
+              {(selectedVideo && (!comments[selectedVideo.filename] || comments[selectedVideo.filename].length === 0)) && (
                 <Text style={styles.emptyCommentsText}>Nenhum comentário ainda. Seja o primeiro!</Text>
               )}
             </ScrollView>
