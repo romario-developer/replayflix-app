@@ -256,6 +256,7 @@ export default function HomeScreen() {
   const [favoriteReplays, setFavoriteReplays] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'feed' | 'grid'>('feed'); // Seletor do visualizador
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
+  const [userAvatar, setUserAvatar] = useState('https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80');
 
   // Configurações para rastrear qual item está visível e disparar o autoplay
   const viewabilityConfig = useRef({
@@ -279,7 +280,11 @@ export default function HomeScreen() {
           AsyncStorage.getItem("@video_comments"),
           AsyncStorage.getItem("@favorite_replays"),
         ]);
-        if (uid) setUserId(uid);
+        if (uid) {
+          setUserId(uid);
+          const avatar = await AsyncStorage.getItem(`avatar_${uid}`);
+          if (avatar) setUserAvatar(avatar);
+        }
         if (savedComments) setComments(JSON.parse(savedComments));
         if (savedFavorites) setFavoriteReplays(JSON.parse(savedFavorites));
         await carregarDados(uid);
@@ -461,37 +466,46 @@ export default function HomeScreen() {
         </View>
         <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
            <Image
-             source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }}
+             source={{ uri: userAvatar }}
              style={styles.avatar}
            />
         </TouchableOpacity>
       </View>
 
-      <View style={{ flex: selectedVideo ? 0.35 : 1, width: '100%', overflow: 'hidden' }}>
-        <FlatList
-          key="feed"
-          data={replays}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={LiveStoriesBar}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
-          }
-          onViewableItemsChanged={onViewableItemsChanged}
-          viewabilityConfig={viewabilityConfig}
-          renderItem={({ item }) => (
-            <InstagramFeedCard
-              video={item}
-              toggleLike={toggleLike}
-              toggleFavorite={toggleFavorite}
-              isFavorite={favoriteReplays.includes(item.filename)}
-              isActive={item.id === activeVideoId}
-              handleShare={handleShare}
-              openComments={openCommentsWithAnimation}
-            />
-          )}
-          contentContainerStyle={{ paddingBottom: 20 }}
-        />
-      </View>
+      {selectedVideo ? (
+        <View style={{ flex: 0.35, width: '100%', backgroundColor: '#000', overflow: 'hidden', justifyContent: 'center' }}>
+          <InlineVideoPlayer 
+            videoUrl={selectedVideo.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`} 
+            isActive={true} 
+          />
+        </View>
+      ) : (
+        <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
+          <FlatList
+            key="feed"
+            data={replays}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={LiveStoriesBar}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
+            }
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            renderItem={({ item }) => (
+              <InstagramFeedCard
+                video={item}
+                toggleLike={toggleLike}
+                toggleFavorite={toggleFavorite}
+                isFavorite={favoriteReplays.includes(item.filename)}
+                isActive={item.id === activeVideoId}
+                handleShare={handleShare}
+                openComments={openCommentsWithAnimation}
+              />
+            )}
+            contentContainerStyle={{ paddingBottom: 100 }}
+          />
+        </View>
+      )}
 
       {/* Painel de Comentários Integrado (Substitui o Modal) */}
       {!!selectedVideo && (

@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import React, { useEffect, useState, useCallback } from "react";
 import {
     Alert,
     FlatList,
@@ -47,10 +47,12 @@ export default function ProfileScreen() {
   const [meusVideos, setMeusVideos] = useState<any[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
 
-  useEffect(() => {
-    carregarPerfil();
-    carregarEstatisticas();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      carregarPerfil();
+      carregarEstatisticas();
+    }, [])
+  );
 
   const carregarPerfil = async () => {
     try {
@@ -82,11 +84,14 @@ export default function ProfileScreen() {
 
   const carregarEstatisticas = async () => {
     try {
-      const userId = await AsyncStorage.getItem("userId");
-      if (!userId) return;
+      const favStr = await AsyncStorage.getItem("@favorite_replays");
+      let favoritos: string[] = [];
+      if (favStr) favoritos = JSON.parse(favStr);
+
+      setTotalVideos(favoritos.length);
+
       const data = await getReplays();
-      const filtrados = data.filter((video: any) => video.user_id && video.user_id.toString() === userId);
-      setTotalVideos(filtrados.length);
+      const filtrados = data.filter((video: any) => favoritos.includes(video.filename));
       const arenasUnicas = new Set(filtrados.map((v: any) => v.arena));
       setTotalArenas(arenasUnicas.size);
     } catch (error) {
