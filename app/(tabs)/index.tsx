@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as ScreenOrientation from "expo-screen-orientation";
+// import * as ScreenOrientation from "expo-screen-orientation";
 import { Image } from "expo-image";
+import { useAutoRefresh } from "../../hooks/use-auto-refresh";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     FlatList,
-    Modal,
+    // Modal,
     Platform,
     RefreshControl,
     ScrollView,
@@ -23,19 +24,20 @@ import {
     KeyboardAvoidingView
 } from "react-native";
 
+
+import { useVideoPlayer, VideoView } from "expo-video";
+import { getReplays, likeReplay, unlikeReplay, ReplayVideo } from "../../services/api";
+import { router } from 'expo-router';
+
 if (Platform.OS === 'android') {
   if (UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
   }
 }
-import { useVideoPlayer, VideoView } from "expo-video";
-import { getReplays, likeReplay, unlikeReplay, ReplayVideo } from "../../services/api";
-import Animated, { FadeInDown, FadeInUp } from "react-native-reanimated";
-import { router } from 'expo-router';
 
 const { width } = Dimensions.get("window");
-const GRID_ITEM_WIDTH = (width - 4) / 3;
-const CARD_WIDTH = (width - 48) / 2;
+// const GRID_ITEM_WIDTH = (width - 4) / 3;
+// const CARD_WIDTH = (width - 48) / 2;
 const ITEM_WIDTH = width * 0.8; // Largura para o carrossel de destaques
 
 // Função auxiliar para formatar datas no estilo do app
@@ -51,7 +53,7 @@ const formatVideoDate = (dateStr?: string) => {
     const minutes = String(d.getMinutes()).padStart(2, '0');
     const seconds = String(d.getSeconds()).padStart(2, '0');
     return `${day}/${month}/${year} - ${hours}:${minutes}:${seconds}`;
-  } catch (e) {
+  } catch {
     return dateStr;
   }
 };
@@ -59,11 +61,88 @@ const formatVideoDate = (dateStr?: string) => {
 // Componente: Player de Vídeo em Linha com Autoplay
 const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive: boolean }) => {
   const [loading, setLoading] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const webVideoRef = useRef<any>(null);
+  const isWeb = Platform.OS === 'web';
+  const player = useVideoPlayer(videoUrl, p => {
+    p.loop = true;
+    p.muted = true;
+  });
 
-  if (Platform.OS === 'web') {
+  // Web: controlar play/pause
+  useEffect(() => {
+    if (isWeb && webVideoRef.current) {
+      if (!isActive) {
+        webVideoRef.current.pause();
+      } else if (!paused) {
+        webVideoRef.current.play().catch(() => {});
+      }
+    }
+  }, [isActive, paused, isWeb]);
+
+  // Native: controlar play/pause
+  useEffect(() => {
+    if (!isWeb) {
+      if (isActive && !paused) {
+        player.play();
+      } else {
+        player.pause();
+      }
+    }
+  }, [isActive, paused, player, isWeb]);
+
+  // Native: status de buffering
+  useEffect(() => {
+    if (!isWeb) {
+      const subscription = player.addListener('statusChange', (payload) => {
+        if (payload.status === 'loading') setIsBuffering(true);
+        else setIsBuffering(false);
+      });
+      return () => subscription.remove();
+    }
+  }, [player, isWeb]);
+
+  // Web: toggle pause
+  const togglePauseWeb = (e: any) => {
+    e.stopPropagation();
+    if (!webVideoRef.current) return;
+    if (webVideoRef.current.paused) {
+      webVideoRef.current.play();
+      setPaused(false);
+    } else {
+      webVideoRef.current.pause();
+      setPaused(true);
+    }
+  };
+
+  // Web: fullscreen
+  const goFullscreen = (e: any) => {
+    e.stopPropagation();
+    const el = webVideoRef.current;
+    if (!el) return;
+    if (el.requestFullscreen) el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else if (el.webkitEnterFullscreen) el.webkitEnterFullscreen();
+    else if (el.msRequestFullscreen) el.msRequestFullscreen();
+  };
+
+  // Native: toggle pause
+  const togglePauseNative = () => {
+    if (paused) {
+      player.play();
+      setPaused(false);
+    } else {
+      player.pause();
+      setPaused(true);
+    }
+  };
+
+  if (isWeb) {
     return (
       <View style={styles.inlinePlayerContainer}>
         <video
+          ref={webVideoRef}
           src={videoUrl}
           autoPlay={isActive}
           muted
@@ -73,57 +152,80 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
           onWaiting={() => setLoading(true)}
           onPlaying={() => setLoading(false)}
           onCanPlay={() => setLoading(false)}
+          onClick={togglePauseWeb}
         />
         {loading && (
-          <View style={styles.videoLoadingOverlay}>
+          <View style={styles.videoLoadingOverlay} pointerEvents="none">
             <ActivityIndicator size="large" color="#D30000" />
           </View>
         )}
+        {paused && !loading && (
+          <TouchableOpacity 
+            style={styles.videoPauseOverlay} 
+            onPress={togglePauseWeb}
+            activeOpacity={0.8}
+          >
+            <View style={styles.bigPlayIconCircle}>
+              <Ionicons name="play" size={42} color="#FFF" />
+            </View>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity 
+          style={styles.fullscreenBtn} 
+          onPress={goFullscreen}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="expand-outline" size={20} color="#FFF" />
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // Native (expo-video)
-  const player = useVideoPlayer(videoUrl, p => {
-    p.loop = true;
-    p.muted = true;
-  });
-
-  useEffect(() => {
-    if (isActive) {
-      player.play();
-    } else {
-      player.pause();
-    }
-  }, [isActive, player]);
-
-  const [isBuffering, setIsBuffering] = useState(false);
-  useEffect(() => {
-    const subscription = player.addListener('statusChange', (payload) => {
-      if (payload.status === 'loading') {
-        setIsBuffering(true);
-      } else {
-        setIsBuffering(false);
-      }
-    });
-    return () => {
-      subscription.remove();
-    };
-  }, [player]);
-
+  // Native
   return (
     <View style={styles.inlinePlayerContainer}>
-      <VideoView
-        player={player}
-        style={styles.feedCardMedia}
-        nativeControls={false}
-        contentFit="cover"
-      />
+      <TouchableOpacity 
+        activeOpacity={1} 
+        onPress={togglePauseNative}
+        style={{ width: '100%', height: '100%' }}
+      >
+        <VideoView
+          player={player}
+          style={styles.feedCardMedia}
+          nativeControls={false}
+          contentFit="cover"
+          allowsFullscreen
+        />
+      </TouchableOpacity>
       {isBuffering && (
-        <View style={styles.videoLoadingOverlay}>
+        <View style={styles.videoLoadingOverlay} pointerEvents="none">
           <ActivityIndicator size="large" color="#D30000" />
         </View>
       )}
+      {paused && !isBuffering && (
+        <TouchableOpacity 
+          style={styles.videoPauseOverlay} 
+          onPress={togglePauseNative}
+          activeOpacity={0.8}
+        >
+          <View style={styles.bigPlayIconCircle}>
+            <Ionicons name="play" size={42} color="#FFF" />
+          </View>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity 
+        style={styles.fullscreenBtn} 
+        onPress={() => {
+          try {
+            (player as any).enterFullscreen?.();
+          } catch (e) {
+            console.warn('Fullscreen indisponível:', e);
+          }
+        }}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="expand-outline" size={20} color="#FFF" />
+      </TouchableOpacity>
     </View>
   );
 };
@@ -271,7 +373,7 @@ export default function HomeScreen() {
   const [commentText, setCommentText] = useState("");
   const [comments, setComments] = useState<{ [key: string]: string[] }>({});
   const [favoriteReplays, setFavoriteReplays] = useState<string[]>([]);
-  const [viewMode, setViewMode] = useState<'feed' | 'grid'>('feed'); // Seletor do visualizador
+  // const [viewMode, setViewMode] = useState<'feed' | 'grid'>('feed'); // Seletor do visualizador
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
   const [userAvatar, setUserAvatar] = useState('https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80');
 
@@ -289,6 +391,7 @@ export default function HomeScreen() {
     }
   }).current;
 
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -304,7 +407,7 @@ export default function HomeScreen() {
         }
         if (savedComments) setComments(JSON.parse(savedComments));
         if (savedFavorites) setFavoriteReplays(JSON.parse(savedFavorites));
-        await carregarDados(uid);
+        // carregarDados só pode ser usado após a declaração
       } catch (e) {
         console.error("Erro ao inicializar:", e);
       }
@@ -312,7 +415,7 @@ export default function HomeScreen() {
     init();
   }, []);
 
-  const carregarDados = async (uid?: string | null) => {
+  const carregarDados = useCallback(async (uid?: string | null) => {
     try {
       const idParaUsar = uid !== undefined ? uid : userId;
       const dados = await getReplays(idParaUsar);
@@ -325,13 +428,17 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+   useAutoRefresh(() => {
+  carregarDados();
+}, 5000);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await carregarDados();
     setRefreshing(false);
-  }, [userId]);
+  }, [carregarDados]);
 
   const toggleLike = async (video: ReplayVideo) => {
     if (!userId) {
@@ -423,45 +530,19 @@ export default function HomeScreen() {
     setSelectedVideo(null);
   };
 
-  const handleVideoSelect = (video: ReplayVideo) => {
-    openCommentsWithAnimation(video);
-  };
+  // const handleVideoSelect = (video: ReplayVideo) => {
+  //   openCommentsWithAnimation(video);
+  // };
 
-  const renderFeatured = () => {
-    if (replays.length === 0) return null;
-    return (
-      <Animated.View entering={FadeInDown.duration(800)} style={styles.featuredContainer}>
-        <Text style={styles.sectionHeader}>Destaques da Galera</Text>
-        <FlatList
-          data={replays.slice(0, 5)}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <TouchableOpacity activeOpacity={0.9} onPress={() => handleVideoSelect(item)} style={styles.featuredCard}>
-              <Image
-                source={{ uri: item.thumbnail_url }}
-                style={styles.featuredImage}
-                contentFit="cover"
-                transition={500}
-              />
-              <View style={styles.featuredOverlay}>
-                <View style={styles.liveBadge}>
-                  <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>DESTAQUE</Text>
-                </View>
-                <Text style={styles.featuredTitle}>{item.titulo || item.arena}</Text>
-                <View style={styles.playButtonFeatured}>
-                  <Ionicons name="play" size={20} color="#000" />
-                  <Text style={styles.playButtonText}>Assistir Agora</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
-        />
-      </Animated.View>
-    );
-  };
+  // const renderFeatured = () => {
+  //   if (replays.length === 0) return null;
+  //   return (
+  //     <Animated.View entering={FadeInDown.duration(800)} style={styles.featuredContainer}>
+  //       <Text style={styles.sectionHeader}>Destaques da Galera</Text>
+  //       <FlatList ... />
+  //     </Animated.View>
+  //   );
+  // };
 
   if (loading) {
     return (
@@ -958,6 +1039,36 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  videoPauseOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  bigPlayIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullscreenBtn: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },

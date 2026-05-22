@@ -23,7 +23,13 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "lang": "pt-BR",
+      "name": "ReplayFlix",
+      "shortName": "ReplayFlix",
+      "description": "Replay esportivo dos seus lances",
+      "themeColor": "#0A0A0A",
+      "backgroundColor": "#0A0A0A"
     },
     "plugins": [
       "expo-router",
