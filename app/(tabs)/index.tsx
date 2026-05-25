@@ -26,7 +26,7 @@ import {
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
-import { getReplays, likeReplay, unlikeReplay, ReplayVideo } from "../../services/api";
+import { getReplays, likeReplay, unlikeReplay, ReplayVideo, getArenas, Arena } from "../../services/api";
 import { router } from 'expo-router';
 
 if (Platform.OS === 'android') {
@@ -268,9 +268,7 @@ const InstagramFeedCard = ({
         <View style={styles.feedCardHeaderTexts}>
           <Text style={styles.feedCardUsername}>{video.titulo || video.arena}</Text>
         </View>
-        <TouchableOpacity style={styles.feedCardMore}>
-          <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
-        </TouchableOpacity>
+        
       </View>
 
       {/* Mídia do Card (Player inline ou Thumbnail estática) - SEM OPÇÃO DE CLIQUE */}
@@ -333,32 +331,71 @@ const InstagramFeedCard = ({
 };
 
 // Componente Barra de Stories / Arenas Ao Vivo no Topo
-const LiveStoriesBar = () => {
-  const stories = [
-    { id: '1', name: 'Arena 40º', isLive: true, image: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80' },
-    { id: '2', name: 'Santa Areia', isLive: false, image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=100&q=80' },
-    { id: '3', name: 'Pé na Areia', isLive: false, image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80' },
-    { id: '4', name: 'Beach Sports', isLive: false, image: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80' },
-    { id: '5', name: 'Arena Soccer', isLive: false, image: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80' },
-  ];
+const LiveStoriesBar = ({ 
+  arenas, 
+  selectedArenaId, 
+  onSelectArena 
+}: { 
+  arenas: Arena[]; 
+  selectedArenaId: string | null; 
+  onSelectArena: (id: string | null) => void;
+}) => {
+  if (!arenas || arenas.length === 0) return null;
 
   return (
     <View style={styles.storiesContainer}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesScrollContent}>
-        {stories.map(story => (
-          <TouchableOpacity key={story.id} style={styles.storyWrapper}>
-            <View style={[styles.storyAvatarContainer, story.isLive && styles.storyLiveBorder]}>
-              <Image source={{ uri: story.image }} style={styles.storyAvatar} />
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        contentContainerStyle={styles.storiesScrollContent}
+      >
+        {/* Item "Todas" — sempre aparece primeiro, pra limpar filtro */}
+        <TouchableOpacity 
+          style={styles.storyWrapper} 
+          onPress={() => onSelectArena(null)}
+          activeOpacity={0.7}
+        >
+          <View style={[
+            styles.storyAvatarContainer,
+            !selectedArenaId && styles.storyLiveBorder
+          ]}>
+            <View style={styles.storyAllIcon}>
+              <Ionicons name="apps" size={22} color="#FFF" />
             </View>
-            {story.isLive ? (
-              <View style={styles.liveStoryBadge}>
-                <Text style={styles.liveStoryBadgeText}>Ao Vivo</Text>
+          </View>
+          <Text style={[
+            styles.storyName,
+            !selectedArenaId && styles.storyNameActive
+          ]} numberOfLines={1}>Todas</Text>
+        </TouchableOpacity>
+
+        {/* Arenas reais do banco */}
+        {arenas.map(arena => {
+          const isSelected = selectedArenaId === arena.id;
+          const fallbackImg = `https://ui-avatars.com/api/?name=${encodeURIComponent(arena.nome)}&background=D30000&color=fff&bold=true&size=120`;
+          return (
+            <TouchableOpacity 
+              key={arena.id} 
+              style={styles.storyWrapper}
+              onPress={() => onSelectArena(arena.id)}
+              activeOpacity={0.7}
+            >
+              <View style={[
+                styles.storyAvatarContainer, 
+                isSelected && styles.storyLiveBorder
+              ]}>
+                <Image 
+                  source={{ uri: arena.foto_url || fallbackImg }} 
+                  style={styles.storyAvatar} 
+                />
               </View>
-            ) : (
-              <Text style={styles.storyName} numberOfLines={1}>{story.name}</Text>
-            )}
-          </TouchableOpacity>
-        ))}
+              <Text style={[
+                styles.storyName,
+                isSelected && styles.storyNameActive
+              ]} numberOfLines={1}>{arena.nome}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
     </View>
   );
@@ -366,6 +403,8 @@ const LiveStoriesBar = () => {
 
 export default function HomeScreen() {
   const [replays, setReplays] = useState<ReplayVideo[]>([]);
+  const [arenas, setArenas] = useState<Arena[]>([]);
+  const [selectedArenaId, setSelectedArenaId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
@@ -420,6 +459,15 @@ export default function HomeScreen() {
       const idParaUsar = uid !== undefined ? uid : userId;
       const dados = await getReplays(idParaUsar);
       setReplays(dados);
+
+      const arenasDoBanco = await getArenas();
+
+// Mantém só arenas que têm pelo menos 1 vídeo
+const arenasComVideo = arenasDoBanco.filter(a =>
+  dados.some(v => v.arena_id === a.id)
+);
+setArenas(arenasComVideo);
+      
       if (dados && dados.length > 0) {
         setActiveVideoId(dados[0].id);
       }
@@ -581,9 +629,17 @@ export default function HomeScreen() {
         <View style={{ flex: 1, width: '100%', overflow: 'hidden' }}>
           <FlatList
             key="feed"
-            data={replays}
+            data={selectedArenaId 
+  ? replays.filter(v => v.arena_id === selectedArenaId)
+  : replays}
             keyExtractor={(item) => item.id}
-            ListHeaderComponent={LiveStoriesBar}
+            ListHeaderComponent={
+  <LiveStoriesBar 
+    arenas={arenas}
+    selectedArenaId={selectedArenaId}
+    onSelectArena={setSelectedArenaId}
+  />
+}
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
             }
@@ -769,6 +825,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
+
+  storyNameActive: {
+  color: '#D30000',
+  fontWeight: '900',
+},
+storyAllIcon: {
+  width: '100%',
+  height: '100%',
+  borderRadius: 30,
+  backgroundColor: '#1A1A1A',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
 
   // Feed Card
   feedCardContainer: {

@@ -22,6 +22,7 @@ export type ReplayVideo = {
   size: string;
   created_at: string;
   arena: string;
+  arena_id?: string | null;
   user_id?: string | number | null;
   likes: number;
   thumbnail_url?: string;
