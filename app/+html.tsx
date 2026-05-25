@@ -1,11 +1,8 @@
 // ============================================================
-//  Frontend/app/+html.tsx
-//  Este arquivo customiza o HTML wrapper que o Expo Web gera.
-//  
-//  CRÍTICO: o <body><div id="splash"> aparece IMEDIATAMENTE
-//  antes do bundle JS baixar. Quando o React inicializa, ele
-//  substitui o conteúdo do <div id="root"> e o splash é
-//  ocultado via CSS (porque aí o <div id="root"> tem filhos).
+//  Frontend/app/+html.tsx  (v2)
+//  Splash persiste até o app sinalizar que pode esconder.
+//  O app dispara via window.__splashDone() quando os dados
+//  carregam. Fallback de segurança: 20s.
 // ============================================================
 
 import { ScrollViewStyleReset } from 'expo-router/html';
@@ -29,11 +26,9 @@ export default function Root({ children }: PropsWithChildren) {
 
         <ScrollViewStyleReset />
 
-        {/* Splash inline — aparece antes do bundle carregar */}
         <style dangerouslySetInnerHTML={{ __html: splashCSS }} />
       </head>
       <body>
-        {/* Splash visível no boot — somente quando o React ainda não renderizou */}
         <div id="initial-splash">
           <div className="splash-logo">REPLAY<span>FLIX</span></div>
           <div className="splash-bar">
@@ -44,8 +39,7 @@ export default function Root({ children }: PropsWithChildren) {
 
         {children}
 
-        {/* Esconde o splash assim que o React montar */}
-        <script dangerouslySetInnerHTML={{ __html: hideSplashScript }} />
+        <script dangerouslySetInnerHTML={{ __html: splashControllerScript }} />
       </body>
     </html>
   );
@@ -111,36 +105,34 @@ const splashCSS = `
   }
 `;
 
-const hideSplashScript = `
+// Splash NÃO some sozinho. Ele espera o app chamar window.__splashDone()
+// (quando os dados foram carregados de fato).
+// Fallback: 20 segundos sem sinal, esconde mesmo assim.
+const splashControllerScript = `
   (function() {
-    // Observa o DOM até o React montar e renderizar conteúdo no #root
     var splash = document.getElementById('initial-splash');
     if (!splash) return;
+    var hidden = false;
+    var minShowMs = 600; // garante que o splash não pisque
+    var bootStart = Date.now();
 
-    function tryHide() {
-      var root = document.getElementById('root');
-      if (root && root.children.length > 0) {
-        splash.classList.add('hide');
-        setTimeout(function() { splash.remove(); }, 500);
-        return true;
-      }
-      return false;
-    }
-
-    if (!tryHide()) {
-      var observer = new MutationObserver(function() {
-        if (tryHide()) observer.disconnect();
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-
-      // Fallback de segurança: esconde após 20s mesmo que não tenha detectado
+    function hideSplash() {
+      if (hidden) return;
+      hidden = true;
+      var elapsed = Date.now() - bootStart;
+      var wait = Math.max(0, minShowMs - elapsed);
       setTimeout(function() {
-        if (splash) {
-          splash.classList.add('hide');
-          setTimeout(function() { splash.remove(); }, 500);
-        }
-        observer.disconnect();
-      }, 20000);
+        splash.classList.add('hide');
+        setTimeout(function() { 
+          if (splash && splash.parentNode) splash.parentNode.removeChild(splash);
+        }, 500);
+      }, wait);
     }
+
+    // Expõe API pro app chamar quando estiver pronto
+    window.__splashDone = hideSplash;
+
+    // Fallback de segurança: 20s sem sinal, esconde mesmo assim
+    setTimeout(hideSplash, 20000);
   })();
 `;

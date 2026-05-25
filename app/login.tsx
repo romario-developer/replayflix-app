@@ -34,8 +34,20 @@ export default function LoginScreen() {
         const userId = await AsyncStorage.getItem("userId");
         if (userId) {
           router.replace("/(tabs)");
+          // Splash continua visível — quem esconde é o (tabs)/index.tsx
+          // depois que getReplays() retornar
+        } else {
+          // Usuário não logado: tela de login será exibida agora
+          if (typeof window !== 'undefined' && (window as any).__splashDone) {
+            (window as any).__splashDone();
+          }
         }
-      } catch (e) {}
+      } catch (e) {
+        // Se der erro, esconde o splash mesmo assim pra não travar
+        if (typeof window !== 'undefined' && (window as any).__splashDone) {
+          (window as any).__splashDone();
+        }
+      }
     };
     verificarLogin();
   }, []);

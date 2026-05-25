@@ -471,11 +471,11 @@ export default function HomeScreen() {
 
       const arenasDoBanco = await getArenas();
 
-// Mantém só arenas que têm pelo menos 1 vídeo
-const arenasComVideo = arenasDoBanco.filter(a =>
-  dados.some(v => v.arena_id === a.id)
-);
-setArenas(arenasComVideo);
+      // Mantém só arenas que têm pelo menos 1 vídeo
+      const arenasComVideo = arenasDoBanco.filter(a =>
+        dados.some(v => v.arena_id === a.id)
+      );
+      setArenas(arenasComVideo);
       
       if (dados && dados.length > 0) {
         setActiveVideoId(dados[0].id);
@@ -484,6 +484,9 @@ setArenas(arenasComVideo);
       console.error("Erro ao carregar replays:", error);
     } finally {
       setLoading(false);
+      if (typeof window !== 'undefined' && (window as any).__splashDone) {
+        (window as any).__splashDone();
+      }
     }
   }, [userId]);
 
