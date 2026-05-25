@@ -264,7 +264,12 @@ const InstagramFeedCard = ({
     <View style={styles.feedCardContainer}>
       {/* Cabeçalho do Card */}
       <View style={styles.feedCardHeader}>
-        <Image source={{ uri: avatarToUse }} style={styles.feedCardAvatar} />
+        <Image 
+  source={{ uri: avatarToUse }} 
+  style={styles.feedCardAvatar}
+  cachePolicy="memory-disk"
+  transition={100}
+/>
         <View style={styles.feedCardHeaderTexts}>
           <Text style={styles.feedCardUsername}>{video.titulo || video.arena}</Text>
         </View>
@@ -280,12 +285,16 @@ const InstagramFeedCard = ({
           />
         ) : (
           <View style={{ width: '100%', height: '100%', position: 'relative' }}>
-            <Image
-              source={{ uri: video.thumbnail_url }}
-              style={styles.feedCardMedia}
-              contentFit="cover"
-              transition={300}
-            />
+           <Image
+  source={{ uri: video.thumbnail_url }}
+  style={styles.feedCardMedia}
+  contentFit="cover"
+  transition={200}
+  priority={isActive ? 'high' : 'normal'}
+  placeholder={{ blurhash: 'L00000fQfQfQfQfQfQfQfQfQfQfQ' }}
+  placeholderContentFit="cover"
+  cachePolicy="memory-disk"
+/>
             <View style={styles.feedPlayOverlay}>
               <Ionicons name="play" size={30} color="#FFF" style={styles.feedPlayIcon} />
             </View>
