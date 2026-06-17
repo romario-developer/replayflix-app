@@ -486,9 +486,9 @@ export default function HomeScreen() {
           console.log('[CACHE] aguardando pré-fetch...');
           dados = await promise;
           (window as any).__prefetchedReplays = null;
-        } catch (e) {
+        } catch  {
           dados = null;
-        }
+
       }
     }
 
