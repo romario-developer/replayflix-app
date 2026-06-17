@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import HomeSkeletonLoader from "../../components/SkeletonLoader";
 // import * as ScreenOrientation from "expo-screen-orientation";
 import { Image } from "expo-image";
 import { useAutoRefresh } from "../../hooks/use-auto-refresh";
@@ -464,31 +465,58 @@ export default function HomeScreen() {
   }, []);
 
   const carregarDados = useCallback(async (uid?: string | null) => {
-    try {
-      const idParaUsar = uid !== undefined ? uid : userId;
-      const dados = await getReplays(idParaUsar);
-      setReplays(dados);
+  try {
+    const idParaUsar = uid !== undefined ? uid : userId;
 
-      const arenasDoBanco = await getArenas();
+    // Tenta usar dados pré-fetchados (disparados no +html.tsx antes do React montar)
+    let dados: ReplayVideo[] | null = null;
+    if (typeof window !== 'undefined') {
+      const prefetched = (window as any).__prefetchedReplays;
+      const promise = (window as any).__prefetchPromise;
 
-      // Mantém só arenas que têm pelo menos 1 vídeo
-      const arenasComVideo = arenasDoBanco.filter(a =>
-        dados.some(v => v.arena_id === a.id)
-      );
-      setArenas(arenasComVideo);
-      
-      if (dados && dados.length > 0) {
-        setActiveVideoId(dados[0].id);
-      }
-    } catch (error) {
-      console.error("Erro ao carregar replays:", error);
-    } finally {
-      setLoading(false);
-      if (typeof window !== 'undefined' && (window as any).__splashDone) {
-        (window as any).__splashDone();
+      if (prefetched) {
+        // Já chegou — usa direto, sem fetch novo
+        console.log('[CACHE] usando dados pré-fetchados');
+        dados = prefetched;
+        // Limpa pra não usar de novo nos refresh
+        (window as any).__prefetchedReplays = null;
+      } else if (promise) {
+        // Ainda chegando — espera ela terminar (não dispara fetch duplicado)
+        try {
+          console.log('[CACHE] aguardando pré-fetch...');
+          dados = await promise;
+          (window as any).__prefetchedReplays = null;
+        } catch (e) {
+          dados = null;
+        }
       }
     }
-  }, [userId]);
+
+    // Fallback: se não tem cache nem promise, faz fetch normal
+    if (!dados) {
+      dados = await getReplays(idParaUsar);
+    }
+
+    setReplays(dados);
+    if (dados && dados.length > 0) {
+      setActiveVideoId(dados[0].id);
+    }
+
+    // Carrega arenas (não bloqueia a renderização)
+    const arenasDoBanco = await getArenas();
+    const arenasComVideo = arenasDoBanco.filter(a =>
+      dados!.some(v => v.arena_id === a.id)
+    );
+    setArenas(arenasComVideo);
+  } catch (error) {
+    console.error("Erro ao carregar replays:", error);
+  } finally {
+    setLoading(false);
+    if (typeof window !== 'undefined' && (window as any).__splashDone) {
+      (window as any).__splashDone();
+    }
+  }
+}, [userId]);
 
    useAutoRefresh(() => {
   carregarDados();
@@ -605,12 +633,8 @@ export default function HomeScreen() {
   // };
 
   if (loading) {
-    return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#FF6B00" />
-      </View>
-    );
-  }
+  return <HomeSkeletonLoader />;
+}
 
   return (
     <View style={styles.container}>
