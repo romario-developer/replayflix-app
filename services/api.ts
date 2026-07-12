@@ -63,6 +63,20 @@ export type Arena = {
   created_at?: string;
 };
 
+export type Baba = {
+  id: number;
+  arena_id: string;
+  nome: string;
+  dia_semana: number; // 0=domingo ... 6=sábado
+  hora_inicio: string; // "19:00:00"
+  hora_fim: string;
+  responsavel?: string | null;
+  ativo: boolean;
+  pago_mes_atual?: boolean;
+  mes_atual?: number;
+  ano_atual?: number;
+};
+
 // ---------------------------------------------------------
 //  1. Buscar todos os vídeos (com flag liked_by_me se userId for passado)
 // ---------------------------------------------------------
@@ -294,5 +308,63 @@ export const deletarArena = async (id: string, owner_id: string): Promise<boolea
   } catch (error) {
     console.error('deletarArena:', error);
     return false;
+  }
+};
+
+// ---------------------------------------------------------
+//  9. Babas (rachas com horário fixo + controle de pagamento)
+// ---------------------------------------------------------
+export const getBabas = async (arenaId: string): Promise<Baba[]> => {
+  try {
+    const response = await axios.get(`${API_URL}/arenas/${arenaId}/babas`);
+    return response.data;
+  } catch (error) {
+    console.error("Erro ao buscar babas:", error);
+    return [];
+  }
+};
+
+export const criarBaba = async (
+  arenaId: string,
+  dados: { nome: string; dia_semana: number; hora_inicio: string; hora_fim: string; responsavel?: string }
+): Promise<{ ok: boolean; baba?: Baba; erro?: string }> => {
+  try {
+    const response = await axios.post(`${API_URL}/arenas/${arenaId}/babas`, dados);
+    return { ok: true, baba: response.data };
+  } catch (error: any) {
+    return { ok: false, erro: error?.response?.data?.erro || "Erro ao cadastrar baba" };
+  }
+};
+
+export const deletarBaba = async (babaId: number): Promise<boolean> => {
+  try {
+    await axios.delete(`${API_URL}/babas/${babaId}`);
+    return true;
+  } catch (error) {
+    console.error("Erro ao remover baba:", error);
+    return false;
+  }
+};
+
+// Marca a mensalidade do mês (atual, por padrão) como paga
+export const pagarBaba = async (babaId: number, mes?: number, ano?: number) => {
+  try {
+    const response = await axios.post(`${API_URL}/babas/${babaId}/pagamentos`, { mes, ano });
+    return response.data;
+  } catch (error: any) {
+    console.error("Erro ao registrar pagamento:", error);
+    return null;
+  }
+};
+
+// Desfaz um pagamento marcado por engano
+export const desfazerPagamentoBaba = async (babaId: number, mes?: number, ano?: number) => {
+  try {
+    const qs = mes && ano ? `?mes=${mes}&ano=${ano}` : "";
+    const response = await axios.delete(`${API_URL}/babas/${babaId}/pagamentos${qs}`);
+    return response.data;
+  } catch (error) {
+    console.error("Erro ao desfazer pagamento:", error);
+    return null;
   }
 };

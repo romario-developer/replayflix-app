@@ -27,7 +27,7 @@ import {
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
-import { getReplays, likeReplay, unlikeReplay, ReplayVideo, getArenas, Arena } from "../../services/api";
+import { getReplays, likeReplay, unlikeReplay, vincularReplay, ReplayVideo, getArenas, Arena } from "../../services/api";
 import { router } from 'expo-router';
 
 if (Platform.OS === 'android') {
@@ -242,6 +242,7 @@ const InstagramFeedCard = ({
   isActive,
   handleShare,
   openComments,
+  claimLance,
   commentCount,
   currentUserId,
   currentUserAvatar
@@ -253,12 +254,15 @@ const InstagramFeedCard = ({
   isActive: boolean;
   handleShare: (video: ReplayVideo) => void;
   openComments: (video: ReplayVideo) => void;
+  claimLance: (video: ReplayVideo) => void;
   commentCount?: number;
   currentUserId?: string | null;
   currentUserAvatar?: string;
 }) => {
   const isLiked = !!video.liked_by_me;
   const isMyVideo = video.user_id && currentUserId && video.user_id.toString() === currentUserId.toString();
+  // Lance sem dono + usuário logado = pode reivindicar ("esse gol é meu!")
+  const podeReivindicar = !video.user_id && !!currentUserId;
   const avatarToUse = isMyVideo && currentUserAvatar
     ? currentUserAvatar
     : `https://ui-avatars.com/api/?name=${encodeURIComponent(video.arena || 'Arena')}&background=random&color=fff`;
@@ -317,6 +321,18 @@ const InstagramFeedCard = ({
           <TouchableOpacity onPress={() => handleShare(video)} style={styles.feedActionButton}>
             <Ionicons name="paper-plane-outline" size={24} color="#FFF" />
           </TouchableOpacity>
+          {podeReivindicar && (
+            <TouchableOpacity onPress={() => claimLance(video)} style={styles.claimButton}>
+              <Ionicons name="football" size={16} color="#FFF" />
+              <Text style={styles.claimButtonText}>É meu!</Text>
+            </TouchableOpacity>
+          )}
+          {isMyVideo && (
+            <View style={styles.myLanceBadge}>
+              <Ionicons name="checkmark-circle" size={14} color="#00C853" />
+              <Text style={styles.myLanceBadgeText}>Seu lance</Text>
+            </View>
+          )}
         </View>
         <TouchableOpacity onPress={() => toggleFavorite(video)} style={styles.feedActionButton}>
           <Ionicons name={isFavorite ? "bookmark" : "bookmark-outline"} size={24} color={isFavorite ? "#FFD700" : "#FFF"} />
@@ -596,6 +612,26 @@ export default function HomeScreen() {
     }
   };
 
+  // "Esse lance é meu!": vincula o lance ao perfil e já favorita
+  const reivindicarLance = async (video: ReplayVideo) => {
+    if (!userId) {
+      console.warn("Usuário não logado — reivindicação ignorada");
+      return;
+    }
+    const resp = await vincularReplay(video.filename, userId);
+    if (!resp) return; // falhou (ex: outro jogador reivindicou antes) — mantém como está
+
+    setReplays(prev => prev.map(v =>
+      v.filename === video.filename ? { ...v, user_id: userId } : v
+    ));
+
+    if (!favoriteReplays.includes(video.filename)) {
+      const atualizados = [...favoriteReplays, video.filename];
+      setFavoriteReplays(atualizados);
+      await AsyncStorage.setItem("@favorite_replays", JSON.stringify(atualizados));
+    }
+  };
+
   const toggleFavorite = async (video: ReplayVideo) => {
     if (!userId) {
       console.warn("Usuário não logado — favorito ignorado");
@@ -722,6 +758,7 @@ export default function HomeScreen() {
                 isActive={item.id === activeVideoId}
                 handleShare={handleShare}
                 openComments={openCommentsWithAnimation}
+                claimLance={reivindicarLance}
                 commentCount={(comments[item.filename] || []).length}
                 currentUserId={userId}
                 currentUserAvatar={userAvatar}
@@ -998,6 +1035,34 @@ storyAllIcon: {
   },
   feedActionButton: {
     padding: 2,
+  },
+  claimButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#D30000',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  claimButtonText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  myLanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,200,83,0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  myLanceBadgeText: {
+    color: '#00C853',
+    fontSize: 12,
+    fontWeight: '700',
   },
   feedCardDetails: {
     paddingHorizontal: 15,

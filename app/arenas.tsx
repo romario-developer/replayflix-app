@@ -183,9 +183,23 @@ export default function ArenasScreen() {
                 {ehDono && <Text style={styles.cardOwner}>Minha arena</Text>}
               </View>
               {ehDono && (
-                <TouchableOpacity onPress={() => apagar(item)} style={styles.cardDelete}>
-                  <Ionicons name="trash-outline" size={20} color="#FF4444" />
-                </TouchableOpacity>
+                <>
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/babas',
+                        params: { arenaId: item.id, arenaNome: item.nome },
+                      })
+                    }
+                    style={styles.cardBabas}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color="#FFF" />
+                    <Text style={styles.cardBabasText}>Babas</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => apagar(item)} style={styles.cardDelete}>
+                    <Ionicons name="trash-outline" size={20} color="#FF4444" />
+                  </TouchableOpacity>
+                </>
               )}
             </View>
           );
@@ -308,6 +322,17 @@ const styles = StyleSheet.create({
   cardCidade: { color: '#999', fontSize: 13, marginTop: 2 },
   cardOwner: { color: '#FFD700', fontSize: 11, marginTop: 4, fontWeight: '600' },
   cardDelete: { padding: 8 },
+  cardBabas: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#D30000',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginRight: 4,
+  },
+  cardBabasText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
 
   emptyBox: { alignItems: 'center', marginTop: 80 },
   emptyText: { color: '#888', fontSize: 16, marginTop: 16 },
