@@ -27,6 +27,12 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#0A0A0A" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="ReplayFlix" />
         <title>ReplayFlix</title>
 
         <ScrollViewStyleReset />
@@ -37,6 +43,7 @@ export default function Root({ children }: PropsWithChildren) {
             ANTES do bundle JS baixar. Inicia o fetch dos replays em paralelo
             com o download do React/Expo. */}
         <script dangerouslySetInnerHTML={{ __html: prefetchScript(API_URL) }} />
+        <script dangerouslySetInnerHTML={{ __html: serviceWorkerScript }} />
       </head>
       <body>
         <div id="initial-splash">
@@ -54,6 +61,17 @@ export default function Root({ children }: PropsWithChildren) {
     </html>
   );
 }
+
+// Registra o service worker do PWA (public/sw.js)
+const serviceWorkerScript = `
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('/sw.js')
+        .then(function(reg) { console.log('[SW] registrado, scope:', reg.scope); })
+        .catch(function(err) { console.warn('[SW] falha ao registrar:', err); });
+    });
+  }
+`;
 
 const splashCSS = `
   body { background:#0A0A0A; margin:0; }

@@ -36,6 +36,8 @@ if (Platform.OS === 'android') {
   }
 }
 
+const PAGE_SIZE = 20; // quantos replays carregar por página do feed
+
 const { width } = Dimensions.get("window");
 // const GRID_ITEM_WIDTH = (width - 4) / 3;
 // const CARD_WIDTH = (width - 48) / 2;
@@ -417,6 +419,8 @@ export default function HomeScreen() {
   const [selectedArenaId, setSelectedArenaId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
@@ -494,10 +498,11 @@ export default function HomeScreen() {
 
     // Fallback: se não tem cache nem promise, faz fetch normal
     if (!dados) {
-      dados = await getReplays(idParaUsar);
+      dados = await getReplays(idParaUsar, PAGE_SIZE);
     }
 
     setReplays(dados);
+    setHasMore(dados.length >= PAGE_SIZE);
     if (dados && dados.length > 0) {
       setActiveVideoId(dados[0].id);
     }
@@ -527,6 +532,26 @@ export default function HomeScreen() {
     await carregarDados();
     setRefreshing(false);
   }, [carregarDados]);
+
+  // Infinite scroll: carrega a próxima página quando o usuário chega perto do fim
+  const carregarMais = useCallback(async () => {
+    if (loadingMore || !hasMore || loading) return;
+    setLoadingMore(true);
+    try {
+      const novos = await getReplays(userId, PAGE_SIZE, replays.length);
+      if (novos.length < PAGE_SIZE) setHasMore(false);
+      if (novos.length > 0) {
+        setReplays(prev => {
+          const idsExistentes = new Set(prev.map(v => v.id));
+          return [...prev, ...novos.filter(v => !idsExistentes.has(v.id))];
+        });
+      }
+    } catch (e) {
+      console.error("Erro ao carregar mais replays:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMore, loading, userId, replays.length]);
 
   const toggleLike = async (video: ReplayVideo) => {
     if (!userId) {
@@ -696,6 +721,13 @@ export default function HomeScreen() {
               />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
+            onEndReached={carregarMais}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              loadingMore ? (
+                <ActivityIndicator size="small" color="#D30000" style={{ marginVertical: 20 }} />
+              ) : null
+            }
           />
         </View>
       )}

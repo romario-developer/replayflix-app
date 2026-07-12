@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import Constants from "expo-constants";
 
@@ -12,6 +13,20 @@ const getApiUrl = () => {
 };
 
 export const API_URL = getApiUrl();
+
+// Anexa o token JWT (salvo no login) em toda requisição pra nossa API.
+// Sem token, as rotas de escrita do backend respondem 401.
+axios.interceptors.request.use(async (config) => {
+  if (config.url?.startsWith(API_URL)) {
+    try {
+      const token = await AsyncStorage.getItem("token");
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+    } catch {
+      // sem token, segue sem header — rotas públicas continuam funcionando
+    }
+  }
+  return config;
+});
 
 // ---------------------------------------------------------
 //  Tipos
@@ -51,10 +66,18 @@ export type Arena = {
 // ---------------------------------------------------------
 //  1. Buscar todos os vídeos (com flag liked_by_me se userId for passado)
 // ---------------------------------------------------------
-export const getReplays = async (userId?: string | number | null): Promise<ReplayVideo[]> => {
+export const getReplays = async (
+  userId?: string | number | null,
+  limit?: number,
+  offset?: number
+): Promise<ReplayVideo[]> => {
   try {
-    const url = userId ? `${API_URL}/replays?user_id=${userId}` : `${API_URL}/replays`;
-    const response = await axios.get(url);
+    const params = new URLSearchParams();
+    if (userId) params.set("user_id", String(userId));
+    if (limit) params.set("limit", String(limit));
+    if (offset) params.set("offset", String(offset));
+    const qs = params.toString();
+    const response = await axios.get(`${API_URL}/replays${qs ? `?${qs}` : ""}`);
     return response.data;
   } catch (error) {
     console.error("Erro ao buscar replays:", error);

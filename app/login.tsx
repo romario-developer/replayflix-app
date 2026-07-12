@@ -78,6 +78,7 @@ export default function LoginScreen() {
 
         try {
           const data = await loginUser(loginLimpo, password);
+          if (data.token) await AsyncStorage.setItem("token", data.token);
           await AsyncStorage.setItem("userId", data.usuario.id.toString());
           await AsyncStorage.setItem("userName", data.usuario.nome);
           router.replace("/(tabs)");
