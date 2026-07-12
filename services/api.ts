@@ -1,6 +1,24 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
+
+// Anexa a foto escolhida no FormData do jeito certo em cada plataforma.
+// Na web o formato {uri, name, type} do React Native NÃO funciona (vira
+// "[object Object]" e o servidor não recebe arquivo) — precisa de um Blob.
+const appendFoto = async (formData: FormData, fotoUri: string) => {
+  if (Platform.OS === "web") {
+    const blob = await (await fetch(fotoUri)).blob();
+    const ext = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+    formData.append("foto", blob, `foto.${ext}`);
+  } else {
+    const fileName = fotoUri.split("/").pop() || "foto.jpg";
+    const match = /\.(\w+)$/.exec(fileName);
+    const type = match ? `image/${match[1]}` : "image/jpeg";
+    // @ts-ignore — no nativo o RN aceita esse formato em FormData
+    formData.append("foto", { uri: fotoUri, name: fileName, type });
+  }
+};
 
 const getApiUrl = () => {
   if (__DEV__) {
@@ -279,18 +297,11 @@ export const criarArena = async (
     formData.append('cidade', dados.cidade);
     formData.append('owner_id', dados.owner_id);
 
-    if (fotoUri) {
-      // No React Native, FormData aceita { uri, name, type }
-      const fileName = fotoUri.split('/').pop() || 'foto.jpg';
-      const match = /\.(\w+)$/.exec(fileName);
-      const type = match ? `image/${match[1]}` : 'image/jpeg';
-      // @ts-ignore — RN aceita esse formato em FormData
-      formData.append('foto', { uri: fotoUri, name: fileName, type });
-    }
+    if (fotoUri) await appendFoto(formData, fotoUri);
 
-    const response = await axios.post(`${API_URL}/arenas`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    // Sem Content-Type manual: o navegador/axios gera o header multipart
+    // com o boundary certo (fixá-lo na mão quebra o upload na web).
+    const response = await axios.post(`${API_URL}/arenas`, formData);
     return { ok: true, arena: response.data };
   } catch (error: any) {
     const msg = error?.response?.data?.erro || 'Erro ao cadastrar arena';
@@ -311,17 +322,9 @@ export const atualizarArena = async (
     if (dados.cidade) formData.append('cidade', dados.cidade);
     formData.append('owner_id', dados.owner_id);
 
-    if (fotoUri) {
-      const fileName = fotoUri.split('/').pop() || 'foto.jpg';
-      const match = /\.(\w+)$/.exec(fileName);
-      const type = match ? `image/${match[1]}` : 'image/jpeg';
-      // @ts-ignore
-      formData.append('foto', { uri: fotoUri, name: fileName, type });
-    }
+    if (fotoUri) await appendFoto(formData, fotoUri);
 
-    const response = await axios.put(`${API_URL}/arenas/${id}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const response = await axios.put(`${API_URL}/arenas/${id}`, formData);
     return { ok: true, arena: response.data };
   } catch (error: any) {
     const msg = error?.response?.data?.erro || 'Erro ao atualizar arena';
