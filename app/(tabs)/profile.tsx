@@ -395,6 +395,12 @@ export default function ProfileScreen() {
               "#D30000",
               abrirGerenciador,
             )}
+            {renderMenuItem(
+              "football",
+              "Minhas Arenas e Babas",
+              "#FF8C00",
+              () => router.push("/arenas"),
+            )}
           </View>
 
           <Text style={styles.sectionTitle}>SISTEMA</Text>
