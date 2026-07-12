@@ -28,7 +28,7 @@ import {
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
-import { getReplays, likeReplay, unlikeReplay, vincularReplay, ReplayVideo, getArenas, Arena } from "../../services/api";
+import { getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, ReplayVideo, Comentario, getArenas, Arena } from "../../services/api";
 import { router, useFocusEffect } from 'expo-router';
 
 if (Platform.OS === 'android') {
@@ -308,7 +308,9 @@ const InstagramFeedCard = ({
   transition={100}
 />
         <View style={styles.feedCardHeaderTexts}>
-          <Text style={styles.feedCardUsername}>{video.titulo || video.arena}</Text>
+          {/* Título do lance: o nome dado pelo dono, ou um padrão neutro
+              (a arena já aparece nos detalhes abaixo do vídeo) */}
+          <Text style={styles.feedCardUsername}>{video.titulo || "Lance Oficial ⚽"}</Text>
         </View>
         
       </View>
@@ -470,8 +472,9 @@ export default function HomeScreen() {
   const [selectedVideo, setSelectedVideo] = useState<ReplayVideo | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
-  const [comments, setComments] = useState<{ [key: string]: string[] }>({});
-  const [favoriteReplays, setFavoriteReplays] = useState<string[]>([]);
+  // Comentários do vídeo aberto (vêm do servidor — todo mundo vê os mesmos)
+  const [comentarios, setComentarios] = useState<Comentario[]>([]);
+  const [loadingComentarios, setLoadingComentarios] = useState(false);
   // const [viewMode, setViewMode] = useState<'feed' | 'grid'>('feed'); // Seletor do visualizador
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
   const [userAvatar, setUserAvatar] = useState('https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80');
@@ -494,19 +497,12 @@ export default function HomeScreen() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [uid, savedComments, savedFavorites] = await Promise.all([
-          AsyncStorage.getItem("userId"),
-          AsyncStorage.getItem("@video_comments"),
-          AsyncStorage.getItem("@favorite_replays"),
-        ]);
+        const uid = await AsyncStorage.getItem("userId");
         if (uid) {
           setUserId(uid);
           const avatar = await AsyncStorage.getItem(`avatar_${uid}`);
           if (avatar) setUserAvatar(avatar);
         }
-        if (savedComments) setComments(JSON.parse(savedComments));
-        if (savedFavorites) setFavoriteReplays(JSON.parse(savedFavorites));
-        // carregarDados só pode ser usado após a declaração
       } catch (e) {
         console.error("Erro ao inicializar:", e);
       }
@@ -705,12 +701,6 @@ export default function HomeScreen() {
     setReplays(prev => prev.map(v =>
       v.filename === video.filename ? { ...v, user_id: userId } : v
     ));
-
-    if (!favoriteReplays.includes(video.filename)) {
-      const atualizados = [...favoriteReplays, video.filename];
-      setFavoriteReplays(atualizados);
-      await AsyncStorage.setItem("@favorite_replays", JSON.stringify(atualizados));
-    }
   };
 
   // Desmarcar "meu lance": desvincula do perfil (marcou por engano)
@@ -741,25 +731,6 @@ export default function HomeScreen() {
     ));
   };
 
-  const toggleFavorite = async (video: ReplayVideo) => {
-    if (!userId) {
-      console.warn("Usuário não logado — favorito ignorado");
-      return;
-    }
-
-    const filename = video.filename;
-    const isFavorited = favoriteReplays.includes(filename);
-    let updatedFavorites: string[];
-
-    if (isFavorited) {
-      updatedFavorites = favoriteReplays.filter(fav => fav !== filename);
-    } else {
-      updatedFavorites = [...favoriteReplays, filename];
-    }
-    setFavoriteReplays(updatedFavorites);
-    await AsyncStorage.setItem("@favorite_replays", JSON.stringify(updatedFavorites));
-  };
-
   const handleShare = async (video: ReplayVideo) => {
     try {
       const url = video.video_url ||
@@ -775,19 +746,34 @@ export default function HomeScreen() {
 
   const addComment = async () => {
     if (!selectedVideo || !commentText.trim()) return;
-    const videoKey = selectedVideo.filename;
-    const newComments = {
-      ...comments,
-      [videoKey]: [...(comments[videoKey] || []), commentText.trim()],
-    };
-    setComments(newComments);
+    const texto = commentText.trim();
     setCommentText("");
-    await AsyncStorage.setItem("@video_comments", JSON.stringify(newComments));
+
+    const novo = await postComentario(selectedVideo.filename, texto);
+    if (!novo) {
+      const msg = "Não consegui enviar o comentário. Sua sessão pode estar desatualizada — saia e entre de novo.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Ops", msg);
+      setCommentText(texto); // devolve o texto pro campo
+      return;
+    }
+
+    setComentarios(prev => [...prev, novo]);
+    setReplays(prev => prev.map(v =>
+      v.filename === selectedVideo.filename
+        ? { ...v, comment_count: (v.comment_count || 0) + 1 }
+        : v
+    ));
   };
 
-  const openCommentsWithAnimation = (video: ReplayVideo) => {
+  const openCommentsWithAnimation = async (video: ReplayVideo) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSelectedVideo(video);
+    setComentarios([]);
+    setLoadingComentarios(true);
+    const lista = await getComentarios(video.filename);
+    setComentarios(lista);
+    setLoadingComentarios(false);
   };
 
   const closeCommentsWithAnimation = () => {
@@ -869,7 +855,7 @@ export default function HomeScreen() {
                 openComments={openCommentsWithAnimation}
                 claimLance={reivindicarLance}
                 unclaimLance={desmarcarLance}
-                commentCount={(comments[item.filename] || []).length}
+                commentCount={item.comment_count || 0}
                 currentUserId={userId}
                 arenaFoto={arenas.find(a => a.id === item.arena_id)?.foto_url}
                 soundOn={soundOn}
@@ -897,7 +883,7 @@ export default function HomeScreen() {
           <View style={styles.commentsSheet}>
             <View style={styles.commentsHeader}>
               <Text style={styles.commentsTitle}>
-                Comentários ({(selectedVideo && comments[selectedVideo.filename] || []).length})
+                Comentários ({comentarios.length})
               </Text>
               <TouchableOpacity onPress={closeCommentsWithAnimation}>
                 <Ionicons name="close" size={24} color="#FFF" />
@@ -905,19 +891,22 @@ export default function HomeScreen() {
             </View>
 
             <ScrollView style={styles.commentsScroll}>
-              {(selectedVideo && comments[selectedVideo.filename] || []).map((comment, i) => (
-                <View key={i} style={styles.commentContainer}>
+              {comentarios.map((c) => (
+                <View key={c.id} style={styles.commentContainer}>
                   <Image
-                    source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80' }}
+                    source={{ uri: `https://ui-avatars.com/api/?name=${encodeURIComponent(c.autor)}&background=333&color=fff&bold=true` }}
                     style={styles.commentAvatar}
                   />
                   <View style={styles.commentContent}>
-                    <Text style={styles.commentAuthor}>Visitante</Text>
-                    <Text style={styles.commentText}>{comment}</Text>
+                    <Text style={styles.commentAuthor}>{c.autor}</Text>
+                    <Text style={styles.commentText}>{c.texto}</Text>
                   </View>
                 </View>
               ))}
-              {(selectedVideo && (!comments[selectedVideo.filename] || comments[selectedVideo.filename].length === 0)) && (
+              {loadingComentarios && (
+                <ActivityIndicator size="small" color="#D30000" style={{ marginTop: 20 }} />
+              )}
+              {!loadingComentarios && comentarios.length === 0 && (
                 <Text style={styles.emptyCommentsText}>Nenhum comentário ainda. Seja o primeiro!</Text>
               )}
             </ScrollView>

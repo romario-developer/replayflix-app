@@ -62,6 +62,15 @@ export type ReplayVideo = {
   video_url?: string;
   titulo?: string | null;
   liked_by_me?: boolean;
+  comment_count?: number;
+};
+
+export type Comentario = {
+  id: number;
+  autor: string;
+  user_id: string;
+  texto: string;
+  created_at: string;
 };
 
 export type Stats = {
@@ -229,6 +238,42 @@ export const deleteUsuario = async (id: string | number) => {
 export const updateSenhaUsuario = async (id: string | number, senhaAtual: string, novaSenha: string) => {
   const response = await axios.put(`${API_URL}/usuarios/${id}/senha`, { senhaAtual, novaSenha });
   return response.data;
+};
+
+// ---------------------------------------------------------
+//  Comentários (agora no servidor — todo mundo vê)
+// ---------------------------------------------------------
+export const getComentarios = async (filename: string): Promise<Comentario[]> => {
+  try {
+    const response = await axios.get(`${API_URL}/replays/${filename}/comentarios`);
+    return response.data;
+  } catch (error) {
+    console.error("Erro ao buscar comentários:", error);
+    return [];
+  }
+};
+
+export const postComentario = async (filename: string, texto: string): Promise<Comentario | null> => {
+  try {
+    const response = await axios.post(`${API_URL}/replays/${filename}/comentarios`, { texto });
+    return response.data;
+  } catch (error) {
+    console.error("Erro ao comentar:", error);
+    return null;
+  }
+};
+
+// ---------------------------------------------------------
+//  Recuperação de senha (código gerado pelo admin)
+// ---------------------------------------------------------
+export const gerarCodigoRecuperacao = async (identificador: string) => {
+  const response = await axios.post(`${API_URL}/usuarios/gerar-codigo`, { identificador });
+  return response.data as { mensagem: string; username: string; codigo: string };
+};
+
+export const resetarSenha = async (identificador: string, codigo: string, novaSenha: string) => {
+  const response = await axios.post(`${API_URL}/resetar-senha`, { identificador, codigo, novaSenha });
+  return response.data as { mensagem: string };
 };
 
 // Sobe a foto de perfil (base64) e devolve a URL pública salva no banco

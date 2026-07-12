@@ -21,7 +21,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { getReplays, deleteReplay, renameReplay, updateUsuario, deleteUsuario, getUsuario, uploadAvatar, updatePosicao } from "../../services/api";
+import { getReplays, deleteReplay, renameReplay, updateUsuario, deleteUsuario, getUsuario, uploadAvatar, updatePosicao, gerarCodigoRecuperacao } from "../../services/api";
 
 // Player simples pra assistir um lance dentro do gerenciador (web e nativo)
 // Vídeo e música repetem em loop até a pessoa fechar.
@@ -79,6 +79,13 @@ export default function ProfileScreen() {
   const [videoRenomeando, setVideoRenomeando] = useState<any | null>(null);
   const [novoTitulo, setNovoTitulo] = useState("");
 
+  // Admin: gerador de código de recuperação de senha
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [modalCodigoVisible, setModalCodigoVisible] = useState(false);
+  const [codigoIdentificador, setCodigoIdentificador] = useState("");
+  const [codigoGerado, setCodigoGerado] = useState<{ username: string; codigo: string } | null>(null);
+  const [gerandoCodigo, setGerandoCodigo] = useState(false);
+
   useFocusEffect(
     useCallback(() => {
       carregarPerfil();
@@ -108,6 +115,7 @@ export default function ProfileScreen() {
           setEmailUsuario(u.email || "");
           await AsyncStorage.setItem("userName", u.nome || "");
           await AsyncStorage.setItem("isAdmin", u.is_admin ? "1" : "0");
+          setIsAdmin(!!u.is_admin);
           if (u.avatar_url) {
             setImagemPerfil(u.avatar_url);
             await AsyncStorage.setItem(`avatar_${userId}`, u.avatar_url);
@@ -128,16 +136,16 @@ export default function ProfileScreen() {
 
   const carregarEstatisticas = async () => {
     try {
-      const favStr = await AsyncStorage.getItem("@favorite_replays");
-      let favoritos: string[] = [];
-      if (favStr) favoritos = JSON.parse(favStr);
-
-      setTotalVideos(favoritos.length);
+      // Fonte da verdade: lances vinculados a mim no servidor
+      const userId = await AsyncStorage.getItem("userId");
+      if (!userId) return;
 
       const data = await getReplays();
-      const filtrados = data.filter((video: any) => favoritos.includes(video.filename));
-      const arenasUnicas = new Set(filtrados.map((v: any) => v.arena));
-      setTotalArenas(arenasUnicas.size);
+      const meus = data.filter(
+        (video: any) => video.user_id && video.user_id.toString() === userId,
+      );
+      setTotalVideos(meus.length);
+      setTotalArenas(new Set(meus.map((v: any) => v.arena)).size);
     } catch (error) {
       console.log("Erro ao carregar estatisticas:", error);
     }
@@ -285,6 +293,21 @@ export default function ProfileScreen() {
       }
     } catch {
       Alert.alert("Erro", "Falha de conexão com o servidor.");
+    }
+  };
+
+  const gerarCodigo = async () => {
+    if (!codigoIdentificador.trim()) return;
+    setGerandoCodigo(true);
+    try {
+      const r = await gerarCodigoRecuperacao(codigoIdentificador.trim().toLowerCase());
+      setCodigoGerado({ username: r.username, codigo: r.codigo });
+    } catch (error: any) {
+      const msg = error?.response?.data?.erro || "Erro ao gerar código.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Erro", msg);
+    } finally {
+      setGerandoCodigo(false);
     }
   };
 
@@ -476,6 +499,17 @@ export default function ProfileScreen() {
               "#FF8C00",
               () => router.push("/arenas"),
             )}
+            {isAdmin &&
+              renderMenuItem(
+                "key",
+                "Código de Recuperação (admin)",
+                "#B87DFF",
+                () => {
+                  setCodigoIdentificador("");
+                  setCodigoGerado(null);
+                  setModalCodigoVisible(true);
+                },
+              )}
           </View>
 
           <Text style={styles.sectionTitle}>SISTEMA</Text>
@@ -713,6 +747,66 @@ export default function ProfileScreen() {
                   `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${videoAssistindo.filename}`
                 }
               />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL ADMIN: CÓDIGO DE RECUPERAÇÃO DE SENHA */}
+      <Modal
+        visible={modalCodigoVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setModalCodigoVisible(false)}
+      >
+        <View style={styles.renameOverlay}>
+          <View style={styles.renameBox}>
+            <Text style={styles.renameTitle}>Código de recuperação</Text>
+            {codigoGerado ? (
+              <>
+                <Text style={styles.codigoHint}>
+                  Envie este código pra @{codigoGerado.username} (vale 30 minutos).
+                  A pessoa usa em "Esqueci minha senha" na tela de login.
+                </Text>
+                <Text style={styles.codigoGrande}>{codigoGerado.codigo}</Text>
+                <TouchableOpacity
+                  style={[styles.renameBtn, styles.renameBtnSave, { marginTop: 16 }]}
+                  onPress={() => setModalCodigoVisible(false)}
+                >
+                  <Text style={styles.renameBtnText}>Fechar</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text style={styles.codigoHint}>
+                  Jogador esqueceu a senha? Digite o usuário ou e-mail dele:
+                </Text>
+                <TextInput
+                  style={styles.renameInput}
+                  placeholder="usuário ou e-mail"
+                  placeholderTextColor="#888"
+                  autoCapitalize="none"
+                  value={codigoIdentificador}
+                  onChangeText={setCodigoIdentificador}
+                />
+                <View style={styles.renameActions}>
+                  <TouchableOpacity
+                    style={[styles.renameBtn, styles.renameBtnCancel]}
+                    onPress={() => setModalCodigoVisible(false)}
+                  >
+                    <Text style={styles.renameBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.renameBtn, styles.renameBtnSave]}
+                    onPress={gerarCodigo}
+                    disabled={gerandoCodigo}
+                  >
+                    <Text style={styles.renameBtnText}>
+                      {gerandoCodigo ? "Gerando..." : "Gerar código"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </View>
         </View>
@@ -1071,6 +1165,19 @@ const styles = StyleSheet.create({
   renameBtnCancel: { backgroundColor: "#333" },
   renameBtnSave: { backgroundColor: "#D30000" },
   renameBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
+  codigoHint: { color: "#AAA", fontSize: 13, lineHeight: 19, marginBottom: 14 },
+  codigoGrande: {
+    color: "#FFF",
+    fontSize: 38,
+    fontWeight: "900",
+    letterSpacing: 8,
+    textAlign: "center",
+    backgroundColor: "#0F0F0F",
+    borderRadius: 12,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
   videoThumbSub: { color: "#8E8E93", fontSize: 11, marginTop: 1 },
 
   // Player (assistir lance)
