@@ -271,6 +271,12 @@ export const gerarCodigoRecuperacao = async (identificador: string) => {
   return response.data as { mensagem: string; username: string; codigo: string };
 };
 
+// Pede o envio do código de recuperação pro e-mail cadastrado
+export const esqueciSenha = async (identificador: string) => {
+  const response = await axios.post(`${API_URL}/esqueci-senha`, { identificador });
+  return response.data as { mensagem: string };
+};
+
 export const resetarSenha = async (identificador: string, codigo: string, novaSenha: string) => {
   const response = await axios.post(`${API_URL}/resetar-senha`, { identificador, codigo, novaSenha });
   return response.data as { mensagem: string };

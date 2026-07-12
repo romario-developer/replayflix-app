@@ -308,9 +308,9 @@ const InstagramFeedCard = ({
   transition={100}
 />
         <View style={styles.feedCardHeaderTexts}>
-          {/* Título do lance: o nome dado pelo dono, ou um padrão neutro
-              (a arena já aparece nos detalhes abaixo do vídeo) */}
-          <Text style={styles.feedCardUsername}>{video.titulo || "Lance Oficial ⚽"}</Text>
+          {/* Em cima, junto da foto: a ARENA. O título do lance fica
+              embaixo, perto da data. */}
+          <Text style={styles.feedCardUsername}>{video.arena}</Text>
         </View>
         
       </View>
@@ -375,7 +375,7 @@ const InstagramFeedCard = ({
       <View style={styles.feedCardDetails}>
         <Text style={styles.feedLikesText}>{video.likes || 0} curtidas</Text>
         <View style={styles.feedDescriptionRow}>
-          <Text style={styles.feedCardTextUsername}>{video.arena} </Text>
+          <Text style={styles.feedCardTextUsername}>{video.titulo || "Lance Oficial ⚽"} </Text>
           <Text style={styles.feedDescriptionText}>{formatVideoDate(video.created_at)}</Text>
         </View>
         {commentCount !== undefined && commentCount > 0 && (
@@ -600,22 +600,36 @@ export default function HomeScreen() {
     }, [])
   );
 
-  // A cada 30s busca lances novos e coloca no topo do feed —
-  // sem recarregar a lista inteira (preserva scroll e paginação).
+  // A cada 15s sincroniza o feed com o servidor, sem recarregar a lista
+  // nem perder o scroll: lances novos entram no topo, e os existentes
+  // atualizam likes, comentários, título e dono. Arena nova (primeiro
+  // lance dela) também entra na barra do topo na hora.
   useEffect(() => {
     const timer = setInterval(async () => {
       try {
         const recentes = await getReplays(userId, PAGE_SIZE, 0);
         if (!recentes || recentes.length === 0) return;
+
         setReplays(prev => {
+          const porId = new Map(recentes.map(v => [v.id, v]));
+          const atualizados = prev.map(v => (porId.has(v.id) ? { ...v, ...porId.get(v.id) } : v));
           const idsAtuais = new Set(prev.map(v => v.id));
           const novos = recentes.filter(v => !idsAtuais.has(v.id));
-          return novos.length > 0 ? [...novos, ...prev] : prev;
+          return novos.length > 0 ? [...novos, ...atualizados] : atualizados;
         });
+
+        // Chegou lance de uma arena que ainda não está na barra? Atualiza.
+        const conhecidas = new Set(arenas.map(a => a.id));
+        if (recentes.some(v => v.arena_id && !conhecidas.has(v.arena_id))) {
+          const todas = await getArenas();
+          setArenas(todas.filter(a =>
+            conhecidas.has(a.id) || recentes.some(v => v.arena_id === a.id)
+          ));
+        }
       } catch { /* sem rede agora — tenta de novo no próximo ciclo */ }
-    }, 30000);
+    }, 15000);
     return () => clearInterval(timer);
-  }, [userId]);
+  }, [userId, arenas]);
 
    useAutoRefresh(() => {
   carregarDados();

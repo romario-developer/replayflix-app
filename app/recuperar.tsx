@@ -17,14 +17,35 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { resetarSenha } from "../services/api";
+import { esqueciSenha, resetarSenha } from "../services/api";
 
 export default function RecuperarScreen() {
   const [identificador, setIdentificador] = useState("");
   const [codigo, setCodigo] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [loading, setLoading] = useState(false);
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [mensagem, setMensagem] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+
+  const enviarPorEmail = async () => {
+    if (!identificador.trim()) {
+      setMensagem({ tipo: "erro", texto: "Digite seu usuário ou e-mail primeiro." });
+      return;
+    }
+    setEnviandoEmail(true);
+    setMensagem(null);
+    try {
+      const r = await esqueciSenha(identificador.trim().toLowerCase());
+      setMensagem({ tipo: "ok", texto: r.mensagem });
+    } catch (error: any) {
+      setMensagem({
+        tipo: "erro",
+        texto: error?.response?.data?.erro || "Não consegui enviar o e-mail. Peça o código a um administrador.",
+      });
+    } finally {
+      setEnviandoEmail(false);
+    }
+  };
 
   const redefinir = async () => {
     if (!identificador.trim() || !codigo.trim() || !novaSenha) {
@@ -62,8 +83,9 @@ export default function RecuperarScreen() {
 
         <Text style={styles.titulo}>Recuperar senha</Text>
         <Text style={styles.subtitulo}>
-          Peça um <Text style={{ color: "#FFD700" }}>código de recuperação</Text> ao
-          administrador do seu baba. Com ele em mãos, preencha abaixo:
+          Digite seu usuário ou e-mail e receba um{" "}
+          <Text style={{ color: "#FFD700" }}>código de 6 dígitos</Text> no seu e-mail.
+          Se preferir, o administrador do seu baba também pode gerar o código pra você.
         </Text>
 
         <View style={styles.inputWrapper}>
@@ -77,6 +99,19 @@ export default function RecuperarScreen() {
             onChangeText={setIdentificador}
           />
         </View>
+
+        <TouchableOpacity
+          style={[styles.botaoEmail, enviandoEmail && { opacity: 0.7 }]}
+          onPress={enviarPorEmail}
+          disabled={enviandoEmail}
+        >
+          <Ionicons name="mail-outline" size={18} color="#FFF" />
+          <Text style={styles.botaoEmailTexto}>
+            {enviandoEmail ? "Enviando..." : "Enviar código pro meu e-mail"}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.divisor} />
 
         <View style={styles.inputWrapper}>
           <Ionicons name="key-outline" size={20} color="#888" style={styles.inputIcon} />
@@ -169,4 +204,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   botaoTexto: { color: "#FFF", fontSize: 16, fontWeight: "bold", letterSpacing: 1 },
+  botaoEmail: {
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "#2A2A2A",
+    borderWidth: 1,
+    borderColor: "#444",
+    height: 48,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  botaoEmailTexto: { color: "#FFF", fontSize: 14, fontWeight: "600" },
+  divisor: { height: 1, backgroundColor: "#2A2A2A", marginVertical: 18 },
 });
