@@ -32,6 +32,7 @@ export default function ArenasScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
   // Formulário
@@ -54,6 +55,8 @@ export default function ArenasScreen() {
     (async () => {
       const uid = await AsyncStorage.getItem('userId');
       setUserId(uid);
+      const admin = await AsyncStorage.getItem('isAdmin');
+      setIsAdmin(admin === '1');
       await carregar();
     })();
   }, [carregar]);
@@ -147,10 +150,23 @@ export default function ArenasScreen() {
           <Ionicons name="chevron-back" size={28} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Arenas</Text>
-        <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addBtn}>
-          <Ionicons name="add" size={26} color="#FFF" />
-        </TouchableOpacity>
+        {isAdmin ? (
+          <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addBtn}>
+            <Ionicons name="add" size={26} color="#FFF" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.addBtn} />
+        )}
       </View>
+
+      {!isAdmin && (
+        <View style={styles.adminHint}>
+          <Ionicons name="information-circle-outline" size={16} color="#FFD700" />
+          <Text style={styles.adminHintText}>
+            Só administradores cadastram arenas. Precisa de uma nova? Fale com um admin.
+          </Text>
+        </View>
+      )}
 
       <FlatList
         data={arenas}
@@ -333,6 +349,15 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   cardBabasText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  adminHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#151208',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  adminHintText: { color: '#B8A24A', fontSize: 12, flex: 1, lineHeight: 17 },
 
   emptyBox: { alignItems: 'center', marginTop: 80 },
   emptyText: { color: '#888', fontSize: 16, marginTop: 16 },

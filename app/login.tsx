@@ -81,6 +81,7 @@ export default function LoginScreen() {
           if (data.token) await AsyncStorage.setItem("token", data.token);
           await AsyncStorage.setItem("userId", data.usuario.id.toString());
           await AsyncStorage.setItem("userName", data.usuario.nome);
+          await AsyncStorage.setItem("isAdmin", data.usuario.is_admin ? "1" : "0");
           router.replace("/(tabs)");
         } catch (err: any) {
           const erroMsg = err.response?.data?.erro || "Erro ao fazer login.";

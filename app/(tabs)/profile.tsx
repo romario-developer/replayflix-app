@@ -21,7 +21,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { getReplays, deleteReplay, updateUsuario, deleteUsuario } from "../../services/api";
+import { getReplays, deleteReplay, updateUsuario, deleteUsuario, getUsuario } from "../../services/api";
 
 // Player simples pra assistir um lance dentro do gerenciador (web e nativo)
 const PlayerLance = ({ url }: { url: string }) => {
@@ -85,28 +85,34 @@ export default function ProfileScreen() {
   const carregarPerfil = async () => {
     try {
       const userId = await AsyncStorage.getItem("userId");
-      if (userId) {
-        const fotoSalva = await AsyncStorage.getItem(`avatar_${userId}`);
-        if (fotoSalva) setImagemPerfil(fotoSalva);
+      if (!userId) return;
 
-        const posicaoSalva = await AsyncStorage.getItem(`posicao_${userId}`);
-        if (posicaoSalva) setPosicao(posicaoSalva);
-        
-        // --- CURATIVO TÁTICO ---
-        // Puxa o nome diretamente da memória do celular em vez de tentar buscar no Render
-        const nomeSalvo = await AsyncStorage.getItem("userName");
-        if (nomeSalvo) {
-          setNomeUsuario(nomeSalvo);
-          setArrobaUsuario(nomeSalvo.toLowerCase().replace(/\s/g, ''));
-        } else {
-          setNomeUsuario("Jogador Oficial");
-          setArrobaUsuario("jogadoroficial");
+      // Foto e posição continuam locais (não vão pro servidor)
+      const fotoSalva = await AsyncStorage.getItem(`avatar_${userId}`);
+      if (fotoSalva) setImagemPerfil(fotoSalva);
+      const posicaoSalva = await AsyncStorage.getItem(`posicao_${userId}`);
+      if (posicaoSalva) setPosicao(posicaoSalva);
+
+      // Nome/username/email vêm do backend (fonte da verdade). Mostra o
+      // que estiver no cache primeiro pra não piscar "Carregando...".
+      const nomeCache = await AsyncStorage.getItem("userName");
+      if (nomeCache) setNomeUsuario(nomeCache);
+
+      try {
+        const u = await getUsuario(userId);
+        if (u) {
+          setNomeUsuario(u.nome || "Jogador");
+          setArrobaUsuario((u.username || "").toLowerCase().replace("@", ""));
+          setEmailUsuario(u.email || "");
+          await AsyncStorage.setItem("userName", u.nome || "");
+          await AsyncStorage.setItem("isAdmin", u.is_admin ? "1" : "0");
         }
-        
-        setEmailUsuario("perfil@replayflix.com.br"); // Placeholder
+      } catch {
+        // Sem rede: fica com o cache local do nome
+        if (nomeCache) setArrobaUsuario(nomeCache.toLowerCase().replace(/\s/g, ""));
       }
     } catch (error) {
-      console.error("Erro ao carregar perfil local:", error);
+      console.error("Erro ao carregar perfil:", error);
     }
   };
 

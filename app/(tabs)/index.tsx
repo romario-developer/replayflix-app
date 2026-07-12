@@ -238,8 +238,6 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
 const InstagramFeedCard = ({
   video,
   toggleLike,
-  toggleFavorite,
-  isFavorite,
   isActive,
   handleShare,
   openComments,
@@ -247,12 +245,10 @@ const InstagramFeedCard = ({
   unclaimLance,
   commentCount,
   currentUserId,
-  currentUserAvatar
+  arenaFoto
 }: {
   video: ReplayVideo;
   toggleLike: (video: ReplayVideo) => void;
-  toggleFavorite: (video: ReplayVideo) => void;
-  isFavorite: boolean;
   isActive: boolean;
   handleShare: (video: ReplayVideo) => void;
   openComments: (video: ReplayVideo) => void;
@@ -260,15 +256,16 @@ const InstagramFeedCard = ({
   unclaimLance: (video: ReplayVideo) => void;
   commentCount?: number;
   currentUserId?: string | null;
-  currentUserAvatar?: string;
+  arenaFoto?: string | null;
 }) => {
   const isLiked = !!video.liked_by_me;
   const isMyVideo = video.user_id && currentUserId && video.user_id.toString() === currentUserId.toString();
   // Lance sem dono + usuário logado = pode reivindicar ("esse gol é meu!")
   const podeReivindicar = !video.user_id && !!currentUserId;
-  const avatarToUse = isMyVideo && currentUserAvatar
-    ? currentUserAvatar
-    : `https://ui-avatars.com/api/?name=${encodeURIComponent(video.arena || 'Arena')}&background=random&color=fff`;
+  // O card representa a ARENA (nunca a foto do usuário): foto da arena se
+  // tiver, senão as iniciais num avatar colorido.
+  const avatarToUse = arenaFoto
+    || `https://ui-avatars.com/api/?name=${encodeURIComponent(video.arena || 'Arena')}&background=1A1A1A&color=fff&bold=true`;
 
   return (
     <View style={styles.feedCardContainer}>
@@ -338,9 +335,6 @@ const InstagramFeedCard = ({
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity onPress={() => toggleFavorite(video)} style={styles.feedActionButton}>
-          <Ionicons name={isFavorite ? "bookmark" : "bookmark-outline"} size={24} color={isFavorite ? "#FFD700" : "#FFF"} />
-        </TouchableOpacity>
       </View>
 
       {/* Detalhes */}
@@ -822,8 +816,6 @@ export default function HomeScreen() {
               <InstagramFeedCard
                 video={item}
                 toggleLike={toggleLike}
-                toggleFavorite={toggleFavorite}
-                isFavorite={favoriteReplays.includes(item.filename)}
                 isActive={item.id === activeVideoId}
                 handleShare={handleShare}
                 openComments={openCommentsWithAnimation}
@@ -831,7 +823,7 @@ export default function HomeScreen() {
                 unclaimLance={desmarcarLance}
                 commentCount={(comments[item.filename] || []).length}
                 currentUserId={userId}
-                currentUserAvatar={userAvatar}
+                arenaFoto={arenas.find(a => a.id === item.arena_id)?.foto_url}
               />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
