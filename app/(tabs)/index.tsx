@@ -63,7 +63,12 @@ const formatVideoDate = (dateStr?: string) => {
 };
 
 // Componente: Player de Vídeo em Linha com Autoplay
-const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive: boolean }) => {
+const InlineVideoPlayer = ({ videoUrl, isActive, soundOn, onToggleSound }: {
+  videoUrl: string;
+  isActive: boolean;
+  soundOn: boolean;
+  onToggleSound: () => void;
+}) => {
   const [loading, setLoading] = useState(true);
   const [paused, setPaused] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -71,30 +76,37 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
   const isWeb = Platform.OS === 'web';
   const player = useVideoPlayer(videoUrl, p => {
     p.loop = true;
-    p.muted = true;
+    p.muted = !soundOn;
   });
 
-  // Web: controlar play/pause
+  // Web: controlar play/pause + som. Se o navegador bloquear autoplay
+  // com som, cai pro mudo em vez de travar o vídeo.
   useEffect(() => {
     if (isWeb && webVideoRef.current) {
+      const v = webVideoRef.current;
       if (!isActive) {
-        webVideoRef.current.pause();
+        v.pause();
       } else if (!paused) {
-        webVideoRef.current.play().catch(() => {});
+        v.muted = !soundOn;
+        v.play().catch(() => {
+          v.muted = true;
+          v.play().catch(() => {});
+        });
       }
     }
-  }, [isActive, paused, isWeb]);
+  }, [isActive, paused, isWeb, soundOn]);
 
-  // Native: controlar play/pause
+  // Native: controlar play/pause + som
   useEffect(() => {
     if (!isWeb) {
+      player.muted = !soundOn;
       if (isActive && !paused) {
         player.play();
       } else {
         player.pause();
       }
     }
-  }, [isActive, paused, player, isWeb]);
+  }, [isActive, paused, player, isWeb, soundOn]);
 
   // Native: status de buffering
   useEffect(() => {
@@ -149,7 +161,7 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
           ref={webVideoRef}
           src={videoUrl}
           autoPlay={isActive}
-          muted
+          muted={!soundOn}
           loop
           playsInline
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
@@ -174,12 +186,19 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
             </View>
           </TouchableOpacity>
         )}
-        <TouchableOpacity 
-          style={styles.fullscreenBtn} 
+        <TouchableOpacity
+          style={styles.fullscreenBtn}
           onPress={goFullscreen}
           activeOpacity={0.7}
         >
           <Ionicons name="expand-outline" size={20} color="#FFF" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.soundBtn}
+          onPress={(e: any) => { e.stopPropagation?.(); onToggleSound(); }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name={soundOn ? "volume-high" : "volume-mute"} size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
     );
@@ -217,8 +236,8 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
           </View>
         </TouchableOpacity>
       )}
-      <TouchableOpacity 
-        style={styles.fullscreenBtn} 
+      <TouchableOpacity
+        style={styles.fullscreenBtn}
         onPress={() => {
           try {
             (player as any).enterFullscreen?.();
@@ -229,6 +248,13 @@ const InlineVideoPlayer = ({ videoUrl, isActive }: { videoUrl: string, isActive:
         activeOpacity={0.7}
       >
         <Ionicons name="expand-outline" size={20} color="#FFF" />
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.soundBtn}
+        onPress={onToggleSound}
+        activeOpacity={0.7}
+      >
+        <Ionicons name={soundOn ? "volume-high" : "volume-mute"} size={20} color="#FFF" />
       </TouchableOpacity>
     </View>
   );
@@ -245,7 +271,9 @@ const InstagramFeedCard = ({
   unclaimLance,
   commentCount,
   currentUserId,
-  arenaFoto
+  arenaFoto,
+  soundOn,
+  onToggleSound
 }: {
   video: ReplayVideo;
   toggleLike: (video: ReplayVideo) => void;
@@ -257,6 +285,8 @@ const InstagramFeedCard = ({
   commentCount?: number;
   currentUserId?: string | null;
   arenaFoto?: string | null;
+  soundOn: boolean;
+  onToggleSound: () => void;
 }) => {
   const isLiked = !!video.liked_by_me;
   const isMyVideo = video.user_id && currentUserId && video.user_id.toString() === currentUserId.toString();
@@ -286,9 +316,11 @@ const InstagramFeedCard = ({
       {/* Mídia do Card (Player inline ou Thumbnail estática) - SEM OPÇÃO DE CLIQUE */}
       <View style={styles.feedCardMediaWrapper}>
         {isActive ? (
-          <InlineVideoPlayer 
-            videoUrl={video.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${video.filename}`} 
-            isActive={isActive} 
+          <InlineVideoPlayer
+            videoUrl={video.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${video.filename}`}
+            isActive={isActive}
+            soundOn={soundOn}
+            onToggleSound={onToggleSound}
           />
         ) : (
           <View style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -544,6 +576,20 @@ export default function HomeScreen() {
     carregarDados();
   }, [carregarDados]);
 
+  // Som do feed: começa mudo (regra dos navegadores); o usuário ativa
+  // uma vez no alto-falante do vídeo e a escolha fica salva pra sempre.
+  const [soundOn, setSoundOn] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem("@sound_on").then(v => { if (v === "1") setSoundOn(true); });
+  }, []);
+  const toggleSound = useCallback(() => {
+    setSoundOn(prev => {
+      const novo = !prev;
+      AsyncStorage.setItem("@sound_on", novo ? "1" : "0");
+      return novo;
+    });
+  }, []);
+
   // Recarrega o avatar sempre que a Home ganha foco — assim, ao trocar
   // a foto no perfil e voltar, o avatar do topo atualiza na hora.
   useFocusEffect(
@@ -787,9 +833,11 @@ export default function HomeScreen() {
 
       {selectedVideo ? (
         <View style={{ flex: 0.35, width: '100%', backgroundColor: '#000', overflow: 'hidden', justifyContent: 'center' }}>
-          <InlineVideoPlayer 
-            videoUrl={selectedVideo.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`} 
-            isActive={true} 
+          <InlineVideoPlayer
+            videoUrl={selectedVideo.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${selectedVideo.filename}`}
+            isActive={true}
+            soundOn={soundOn}
+            onToggleSound={toggleSound}
           />
         </View>
       ) : (
@@ -824,6 +872,8 @@ export default function HomeScreen() {
                 commentCount={(comments[item.filename] || []).length}
                 currentUserId={userId}
                 arenaFoto={arenas.find(a => a.id === item.arena_id)?.foto_url}
+                soundOn={soundOn}
+                onToggleSound={toggleSound}
               />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
@@ -1336,6 +1386,17 @@ storyAllIcon: {
     position: 'absolute',
     bottom: 10,
     right: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  soundBtn: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
     width: 36,
     height: 36,
     borderRadius: 18,

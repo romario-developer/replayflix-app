@@ -79,9 +79,12 @@ export default function LoginScreen() {
         try {
           const data = await loginUser(loginLimpo, password);
           if (data.token) await AsyncStorage.setItem("token", data.token);
-          await AsyncStorage.setItem("userId", data.usuario.id.toString());
+          const uid = data.usuario.id.toString();
+          await AsyncStorage.setItem("userId", uid);
           await AsyncStorage.setItem("userName", data.usuario.nome);
           await AsyncStorage.setItem("isAdmin", data.usuario.is_admin ? "1" : "0");
+          if (data.usuario.avatar_url) await AsyncStorage.setItem(`avatar_${uid}`, data.usuario.avatar_url);
+          if (data.usuario.posicao) await AsyncStorage.setItem(`posicao_${uid}`, data.usuario.posicao);
           router.replace("/(tabs)");
         } catch (err: any) {
           const erroMsg = err.response?.data?.erro || "Erro ao fazer login.";

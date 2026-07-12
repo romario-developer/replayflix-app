@@ -213,6 +213,35 @@ export const updateSenhaUsuario = async (id: string | number, senhaAtual: string
   return response.data;
 };
 
+// Sobe a foto de perfil (base64) e devolve a URL pública salva no banco
+export const uploadAvatar = async (
+  id: string | number,
+  imagemBase64: string,
+  mime: string
+): Promise<string | null> => {
+  try {
+    const response = await axios.post(`${API_URL}/usuarios/${id}/avatar`, {
+      imagem_base64: imagemBase64,
+      mime,
+    });
+    return response.data.avatar_url || null;
+  } catch (error) {
+    console.error("Erro ao enviar foto de perfil:", error);
+    return null;
+  }
+};
+
+// Salva a posição do jogador no servidor
+export const updatePosicao = async (id: string | number, posicao: string): Promise<boolean> => {
+  try {
+    await axios.put(`${API_URL}/usuarios/${id}/posicao`, { posicao });
+    return true;
+  } catch (error) {
+    console.error("Erro ao salvar posição:", error);
+    return false;
+  }
+};
+
 // Lista todas as arenas (opcionalmente filtra por cidade)
 export const getArenas = async (cidade?: string): Promise<Arena[]> => {
   try {

@@ -21,7 +21,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { getReplays, deleteReplay, updateUsuario, deleteUsuario, getUsuario } from "../../services/api";
+import { getReplays, deleteReplay, updateUsuario, deleteUsuario, getUsuario, uploadAvatar, updatePosicao } from "../../services/api";
 
 // Player simples pra assistir um lance dentro do gerenciador (web e nativo)
 const PlayerLance = ({ url }: { url: string }) => {
@@ -87,17 +87,15 @@ export default function ProfileScreen() {
       const userId = await AsyncStorage.getItem("userId");
       if (!userId) return;
 
-      // Foto e posição continuam locais (não vão pro servidor)
+      // Mostra o cache local primeiro pra não piscar "Carregando..."
       const fotoSalva = await AsyncStorage.getItem(`avatar_${userId}`);
       if (fotoSalva) setImagemPerfil(fotoSalva);
       const posicaoSalva = await AsyncStorage.getItem(`posicao_${userId}`);
       if (posicaoSalva) setPosicao(posicaoSalva);
-
-      // Nome/username/email vêm do backend (fonte da verdade). Mostra o
-      // que estiver no cache primeiro pra não piscar "Carregando...".
       const nomeCache = await AsyncStorage.getItem("userName");
       if (nomeCache) setNomeUsuario(nomeCache);
 
+      // Fonte da verdade é o servidor: nome, email, foto e posição
       try {
         const u = await getUsuario(userId);
         if (u) {
@@ -106,9 +104,17 @@ export default function ProfileScreen() {
           setEmailUsuario(u.email || "");
           await AsyncStorage.setItem("userName", u.nome || "");
           await AsyncStorage.setItem("isAdmin", u.is_admin ? "1" : "0");
+          if (u.avatar_url) {
+            setImagemPerfil(u.avatar_url);
+            await AsyncStorage.setItem(`avatar_${userId}`, u.avatar_url);
+          }
+          if (u.posicao) {
+            setPosicao(u.posicao);
+            await AsyncStorage.setItem(`posicao_${userId}`, u.posicao);
+          }
         }
       } catch {
-        // Sem rede: fica com o cache local do nome
+        // Sem rede: fica com o cache local
         if (nomeCache) setArrobaUsuario(nomeCache.toLowerCase().replace(/\s/g, ""));
       }
     } catch (error) {
@@ -149,15 +155,27 @@ export default function ProfileScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
+      base64: true, // precisamos do conteúdo pra subir pro servidor
     });
 
     if (!result.canceled) {
-      const novaFotoUrl = result.assets[0].uri;
-      setImagemPerfil(novaFotoUrl);
+      const asset = result.assets[0];
+      setImagemPerfil(asset.uri); // mostra na hora (otimista)
 
       const userId = await AsyncStorage.getItem("userId");
-      if (userId) {
-        await AsyncStorage.setItem(`avatar_${userId}`, novaFotoUrl);
+      if (!userId || !asset.base64) return;
+
+      // Sobe pro servidor — é o que faz a foto sobreviver a fechar o app,
+      // logout e troca de aparelho.
+      const mime = asset.mimeType || "image/jpeg";
+      const urlSalva = await uploadAvatar(userId, asset.base64, mime);
+      if (urlSalva) {
+        setImagemPerfil(urlSalva);
+        await AsyncStorage.setItem(`avatar_${userId}`, urlSalva);
+      } else {
+        const msg = "Não consegui salvar a foto no servidor. Ela pode sumir ao fechar o app — tente de novo.";
+        if (Platform.OS === "web") window.alert(msg);
+        else Alert.alert("Atenção", msg);
       }
     }
   };
@@ -167,12 +185,15 @@ export default function ProfileScreen() {
       Alert.alert("Erro", "A posição não pode ficar vazia.");
       return;
     }
-    setPosicao(novaPosicaoDigitada);
+    const nova = novaPosicaoDigitada.trim();
+    setPosicao(nova);
     setModalPosicaoVisible(false);
 
     const userId = await AsyncStorage.getItem("userId");
     if (userId) {
-      await AsyncStorage.setItem(`posicao_${userId}`, novaPosicaoDigitada);
+      await AsyncStorage.setItem(`posicao_${userId}`, nova);
+      // Servidor é a fonte da verdade (sobrevive a logout/troca de aparelho)
+      await updatePosicao(userId, nova);
     }
   };
 
