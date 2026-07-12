@@ -98,10 +98,20 @@ export type Baba = {
   hora_inicio: string; // "19:00:00"
   hora_fim: string;
   responsavel?: string | null;
+  valor_mensalidade?: number | null;
   ativo: boolean;
   pago_mes_atual?: boolean;
   mes_atual?: number;
   ano_atual?: number;
+};
+
+export type PixGerado = {
+  pagamento_id: number;
+  valor: number;
+  mes: number;
+  ano: number;
+  copia_cola: string | null;
+  qr_base64: string | null;
 };
 
 // ---------------------------------------------------------
@@ -409,7 +419,7 @@ export const getBabas = async (arenaId: string): Promise<Baba[]> => {
 
 export const criarBaba = async (
   arenaId: string,
-  dados: { nome: string; dia_semana: number; hora_inicio: string; hora_fim: string; responsavel?: string }
+  dados: { nome: string; dia_semana: number; hora_inicio: string; hora_fim: string; responsavel?: string; valor_mensalidade?: number | null }
 ): Promise<{ ok: boolean; baba?: Baba; erro?: string }> => {
   try {
     const response = await axios.post(`${API_URL}/arenas/${arenaId}/babas`, dados);
@@ -421,7 +431,7 @@ export const criarBaba = async (
 
 export const atualizarBaba = async (
   babaId: number,
-  dados: { nome?: string; dia_semana?: number; hora_inicio?: string; hora_fim?: string }
+  dados: { nome?: string; dia_semana?: number; hora_inicio?: string; hora_fim?: string; valor_mensalidade?: number | null }
 ): Promise<{ ok: boolean; erro?: string }> => {
   try {
     await axios.put(`${API_URL}/babas/${babaId}`, dados);
@@ -449,6 +459,18 @@ export const pagarBaba = async (babaId: number, mes?: number, ano?: number) => {
   } catch (error: any) {
     console.error("Erro ao registrar pagamento:", error);
     return null;
+  }
+};
+
+// Gera o PIX da mensalidade (Mercado Pago) — o pagamento confirma sozinho
+export const gerarPixBaba = async (
+  babaId: number
+): Promise<{ ok: boolean; pix?: PixGerado; erro?: string }> => {
+  try {
+    const response = await axios.post(`${API_URL}/babas/${babaId}/pix`, {});
+    return { ok: true, pix: response.data };
+  } catch (error: any) {
+    return { ok: false, erro: error?.response?.data?.erro || "Erro ao gerar o PIX" };
   }
 };
 
