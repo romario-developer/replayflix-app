@@ -6,6 +6,7 @@ import { Image } from "expo-image";
 import { useAutoRefresh } from "../../hooks/use-auto-refresh";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+    Alert,
     FlatList,
     // Modal,
     Platform,
@@ -546,6 +547,23 @@ export default function HomeScreen() {
     carregarDados();
   }, [carregarDados]);
 
+  // A cada 30s busca lances novos e coloca no topo do feed —
+  // sem recarregar a lista inteira (preserva scroll e paginação).
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      try {
+        const recentes = await getReplays(userId, PAGE_SIZE, 0);
+        if (!recentes || recentes.length === 0) return;
+        setReplays(prev => {
+          const idsAtuais = new Set(prev.map(v => v.id));
+          const novos = recentes.filter(v => !idsAtuais.has(v.id));
+          return novos.length > 0 ? [...novos, ...prev] : prev;
+        });
+      } catch { /* sem rede agora — tenta de novo no próximo ciclo */ }
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [userId]);
+
    useAutoRefresh(() => {
   carregarDados();
 }, 5000);
@@ -619,7 +637,13 @@ export default function HomeScreen() {
       return;
     }
     const resp = await vincularReplay(video.filename, userId);
-    if (!resp) return; // falhou (ex: outro jogador reivindicou antes) — mantém como está
+    if (!resp) {
+      // Causa mais comum: sessão de antes do login por token (sem JWT salvo)
+      const msg = "Não consegui vincular o lance. Sua sessão pode estar desatualizada — saia da conta e entre de novo.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Ops", msg);
+      return;
+    }
 
     setReplays(prev => prev.map(v =>
       v.filename === video.filename ? { ...v, user_id: userId } : v

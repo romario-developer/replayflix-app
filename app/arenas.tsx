@@ -112,22 +112,22 @@ export default function ArenasScreen() {
       Alert.alert('Sem permissão', 'Você só pode excluir arenas que cadastrou.');
       return;
     }
-    Alert.alert(
-      'Excluir arena',
-      `Tem certeza que quer excluir "${arena.nome}"? Os vídeos não serão apagados, só desvinculados.`,
-      [
+    const executa = async () => {
+      const ok = await deletarArena(arena.id, userId);
+      if (ok) carregar();
+      else if (Platform.OS === 'web') window.alert('Não foi possível excluir.');
+      else Alert.alert('Erro', 'Não foi possível excluir.');
+    };
+    const aviso = `Tem certeza que quer excluir "${arena.nome}"?\n\nOs babas e pagamentos dela somem junto. Os vídeos não são apagados, só desvinculados.`;
+    // Alert.alert não funciona na web — usa o confirm do navegador
+    if (Platform.OS === 'web') {
+      if (window.confirm(aviso)) executa();
+    } else {
+      Alert.alert('Excluir arena', aviso, [
         { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Excluir',
-          style: 'destructive',
-          onPress: async () => {
-            const ok = await deletarArena(arena.id, userId);
-            if (ok) carregar();
-            else Alert.alert('Erro', 'Não foi possível excluir.');
-          },
-        },
-      ]
-    );
+        { text: 'Excluir', style: 'destructive', onPress: executa },
+      ]);
+    }
   };
 
   if (loading) {
