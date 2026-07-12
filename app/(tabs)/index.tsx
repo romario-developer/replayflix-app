@@ -523,6 +523,13 @@ export default function HomeScreen() {
   }
 }, [userId]);
 
+  // Carrega o feed na montagem e recarrega quando o userId chegar do
+  // AsyncStorage. Sem isso, a tela ficava no skeleton até a janela
+  // perder e ganhar foco (único gatilho do useAutoRefresh).
+  useEffect(() => {
+    carregarDados();
+  }, [carregarDados]);
+
    useAutoRefresh(() => {
   carregarDados();
 }, 5000);
