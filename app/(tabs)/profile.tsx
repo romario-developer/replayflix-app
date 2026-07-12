@@ -2,9 +2,12 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter, useFocusEffect } from "expo-router";
+import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useEffect, useState, useCallback } from "react";
 import {
+    ActivityIndicator,
     Alert,
+    Dimensions,
     FlatList,
     Image,
     Modal,
@@ -19,6 +22,30 @@ import {
     View,
 } from "react-native";
 import { getReplays, deleteReplay, updateUsuario, deleteUsuario } from "../../services/api";
+
+// Player simples pra assistir um lance dentro do gerenciador (web e nativo)
+const PlayerLance = ({ url }: { url: string }) => {
+  if (Platform.OS === "web") {
+    return (
+      <video
+        src={url}
+        controls
+        autoPlay
+        playsInline
+        style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
+      />
+    );
+  }
+  return <PlayerLanceNative url={url} />;
+};
+
+const PlayerLanceNative = ({ url }: { url: string }) => {
+  const player = useVideoPlayer(url, (p) => {
+    p.loop = false;
+    p.play();
+  });
+  return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" allowsFullscreen nativeControls />;
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -46,6 +73,7 @@ export default function ProfileScreen() {
   const [modalGerenciarVisible, setModalGerenciarVisible] = useState(false);
   const [meusVideos, setMeusVideos] = useState<any[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videoAssistindo, setVideoAssistindo] = useState<any | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -551,43 +579,82 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
             {loadingVideos ? (
-              <Text style={styles.emptyText}>Carregando seus lances...</Text>
+              <ActivityIndicator size="large" color="#FF6B00" style={{ marginTop: 40 }} />
             ) : meusVideos.length === 0 ? (
               <Text style={styles.emptyText}>
-                Você ainda não possui vídeos salvos.
+                Você ainda não possui vídeos salvos.{"\n"}
+                Marque um lance como seu no feed com o botão “É meu!”.
               </Text>
             ) : (
               <FlatList
                 data={meusVideos}
                 keyExtractor={(item) => item.id.toString()}
+                numColumns={2}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
+                columnWrapperStyle={{ gap: 12 }}
+                contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 12 }}
                 renderItem={({ item }) => (
-                  <View style={styles.videoListItem}>
-                    <View style={styles.videoListInfo}>
-                      <Ionicons
-                        name="videocam"
-                        size={24}
-                        color="#D30000"
-                        style={{ marginRight: 15 }}
-                      />
-                      <View>
-                        <Text style={styles.videoListTitle}>
-                          {formatarTitulo(item.filename)}
-                        </Text>
-                        <Text style={styles.videoListSub}>
-                          {item.arena} • {item.size || "15MB"}
-                        </Text>
+                  <TouchableOpacity
+                    style={styles.videoThumbCard}
+                    activeOpacity={0.85}
+                    onPress={() => setVideoAssistindo(item)}
+                  >
+                    <View style={styles.videoThumbWrapper}>
+                      {item.thumbnail_url ? (
+                        <Image source={{ uri: item.thumbnail_url }} style={styles.videoThumb} />
+                      ) : (
+                        <View style={[styles.videoThumb, styles.videoThumbEmpty]}>
+                          <Ionicons name="videocam" size={28} color="#555" />
+                        </View>
+                      )}
+                      <View style={styles.videoThumbPlay}>
+                        <Ionicons name="play" size={22} color="#FFF" />
                       </View>
+                      <TouchableOpacity
+                        onPress={() => confirmarExclusao(item.filename)}
+                        style={styles.videoThumbDelete}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash" size={16} color="#FFF" />
+                      </TouchableOpacity>
                     </View>
-                    <TouchableOpacity
-                      onPress={() => confirmarExclusao(item.filename)}
-                      style={styles.deleteBtn}
-                    >
-                      <Ionicons name="trash" size={20} color="#FFF" />
-                    </TouchableOpacity>
-                  </View>
+                    <Text style={styles.videoThumbTitle} numberOfLines={1}>
+                      {formatarTitulo(item.filename)}
+                    </Text>
+                    <Text style={styles.videoThumbSub} numberOfLines={1}>
+                      {item.arena}
+                    </Text>
+                  </TouchableOpacity>
                 )}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL PLAYER — assistir um lance */}
+      <Modal
+        visible={!!videoAssistindo}
+        animationType="fade"
+        transparent={false}
+        onRequestClose={() => setVideoAssistindo(null)}
+      >
+        <View style={styles.playerOverlay}>
+          <View style={styles.playerHeader}>
+            <Text style={styles.playerTitle} numberOfLines={1}>
+              {videoAssistindo ? formatarTitulo(videoAssistindo.filename) : ""}
+            </Text>
+            <TouchableOpacity onPress={() => setVideoAssistindo(null)}>
+              <Ionicons name="close-circle" size={34} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.playerBox}>
+            {videoAssistindo && (
+              <PlayerLance
+                url={
+                  videoAssistindo.video_url ||
+                  `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${videoAssistindo.filename}`
+                }
               />
             )}
           </View>
@@ -827,6 +894,58 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(211, 0, 0, 0.15)",
     borderRadius: 8,
   },
+
+  // Grade de miniaturas dos meus vídeos
+  videoThumbCard: { flex: 1, maxWidth: "48%" },
+  videoThumbWrapper: {
+    width: "100%",
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: "#000",
+    position: "relative",
+  },
+  videoThumb: { width: "100%", height: "100%" },
+  videoThumbEmpty: { justifyContent: "center", alignItems: "center", backgroundColor: "#1A1A1A" },
+  videoThumbPlay: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    width: 44,
+    height: 44,
+    marginTop: -22,
+    marginLeft: -22,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  videoThumbDelete: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(211,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  videoThumbTitle: { color: "#1C1C1E", fontSize: 13, fontWeight: "700", marginTop: 6 },
+  videoThumbSub: { color: "#8E8E93", fontSize: 11, marginTop: 1 },
+
+  // Player (assistir lance)
+  playerOverlay: { flex: 1, backgroundColor: "#000" },
+  playerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === "android" ? 40 : 55,
+    paddingBottom: 12,
+  },
+  playerTitle: { color: "#FFF", fontSize: 16, fontWeight: "700", flex: 1, marginRight: 12 },
+  playerBox: { flex: 1, backgroundColor: "#000", justifyContent: "center" },
 
   // Modais de Formulário
   modalOverlay: {

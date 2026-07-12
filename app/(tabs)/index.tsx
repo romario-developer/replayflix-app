@@ -29,7 +29,7 @@ import {
 
 import { useVideoPlayer, VideoView } from "expo-video";
 import { getReplays, likeReplay, unlikeReplay, vincularReplay, ReplayVideo, getArenas, Arena } from "../../services/api";
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 if (Platform.OS === 'android') {
   if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -244,6 +244,7 @@ const InstagramFeedCard = ({
   handleShare,
   openComments,
   claimLance,
+  unclaimLance,
   commentCount,
   currentUserId,
   currentUserAvatar
@@ -256,6 +257,7 @@ const InstagramFeedCard = ({
   handleShare: (video: ReplayVideo) => void;
   openComments: (video: ReplayVideo) => void;
   claimLance: (video: ReplayVideo) => void;
+  unclaimLance: (video: ReplayVideo) => void;
   commentCount?: number;
   currentUserId?: string | null;
   currentUserAvatar?: string;
@@ -329,10 +331,11 @@ const InstagramFeedCard = ({
             </TouchableOpacity>
           )}
           {isMyVideo && (
-            <View style={styles.myLanceBadge}>
+            <TouchableOpacity onPress={() => unclaimLance(video)} style={styles.myLanceBadge}>
               <Ionicons name="checkmark-circle" size={14} color="#00C853" />
               <Text style={styles.myLanceBadgeText}>Seu lance</Text>
-            </View>
+              <Ionicons name="close" size={13} color="#00C853" style={{ marginLeft: 2 }} />
+            </TouchableOpacity>
           )}
         </View>
         <TouchableOpacity onPress={() => toggleFavorite(video)} style={styles.feedActionButton}>
@@ -547,6 +550,20 @@ export default function HomeScreen() {
     carregarDados();
   }, [carregarDados]);
 
+  // Recarrega o avatar sempre que a Home ganha foco — assim, ao trocar
+  // a foto no perfil e voltar, o avatar do topo atualiza na hora.
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        const uid = await AsyncStorage.getItem("userId");
+        if (uid) {
+          const avatar = await AsyncStorage.getItem(`avatar_${uid}`);
+          if (avatar) setUserAvatar(avatar);
+        }
+      })();
+    }, [])
+  );
+
   // A cada 30s busca lances novos e coloca no topo do feed —
   // sem recarregar a lista inteira (preserva scroll e paginação).
   useEffect(() => {
@@ -654,6 +671,34 @@ export default function HomeScreen() {
       setFavoriteReplays(atualizados);
       await AsyncStorage.setItem("@favorite_replays", JSON.stringify(atualizados));
     }
+  };
+
+  // Desmarcar "meu lance": desvincula do perfil (marcou por engano)
+  const desmarcarLance = async (video: ReplayVideo) => {
+    if (!userId) return;
+    const confirmar = () => desfazerVinculo(video);
+    const msg = `Tirar "${video.titulo || video.arena}" dos seus lances?`;
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) confirmar();
+    } else {
+      Alert.alert("Desmarcar lance", msg, [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Desmarcar", style: "destructive", onPress: confirmar },
+      ]);
+    }
+  };
+
+  const desfazerVinculo = async (video: ReplayVideo) => {
+    const resp = await vincularReplay(video.filename, null);
+    if (!resp) {
+      const msg = "Não consegui desmarcar o lance. Tente novamente.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Ops", msg);
+      return;
+    }
+    setReplays(prev => prev.map(v =>
+      v.filename === video.filename ? { ...v, user_id: null } : v
+    ));
   };
 
   const toggleFavorite = async (video: ReplayVideo) => {
@@ -783,6 +828,7 @@ export default function HomeScreen() {
                 handleShare={handleShare}
                 openComments={openCommentsWithAnimation}
                 claimLance={reivindicarLance}
+                unclaimLance={desmarcarLance}
                 commentCount={(comments[item.filename] || []).length}
                 currentUserId={userId}
                 currentUserAvatar={userAvatar}
