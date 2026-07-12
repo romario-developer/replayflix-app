@@ -1,10 +1,12 @@
-// ReplayFlix Service Worker v1
+// ReplayFlix Service Worker v2
 // Estratégia:
-//  - Bundle (JS/CSS/fontes/ícones): Cache First (offline shell)
+//  - Bundle (JS/CSS/fontes/ícones): Network First (pega deploy novo na hora;
+//    cai pro cache só se estiver offline) — evita app preso em versão velha
 //  - Vídeos, thumbs, API: sempre rede (network only)
 //  - HTML: Network First (com fallback pro cache se offline)
+// Suba o número do cache a cada mudança de estratégia pra limpar o antigo.
 
-const CACHE = 'replayflix-v1';
+const CACHE = 'replayflix-v2';
 
 const NEVER_CACHE = [
   '/api/',
@@ -47,17 +49,15 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Assets estáticos: Cache First
+  // Assets estáticos: Network First (deploy novo sempre ganha; o cache
+  // só entra como fallback quando está offline).
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(resp => {
-        if (resp.ok && resp.type === 'basic') {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return resp;
-      });
-    })
+    fetch(e.request).then(resp => {
+      if (resp.ok && resp.type === 'basic') {
+        const clone = resp.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+      }
+      return resp;
+    }).catch(() => caches.match(e.request))
   );
 });
