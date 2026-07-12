@@ -21,7 +21,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { getReplays, deleteReplay, updateUsuario, deleteUsuario, getUsuario, uploadAvatar, updatePosicao } from "../../services/api";
+import { getReplays, deleteReplay, renameReplay, updateUsuario, deleteUsuario, getUsuario, uploadAvatar, updatePosicao } from "../../services/api";
 
 // Player simples pra assistir um lance dentro do gerenciador (web e nativo)
 // Vídeo e música repetem em loop até a pessoa fechar.
@@ -76,6 +76,8 @@ export default function ProfileScreen() {
   const [meusVideos, setMeusVideos] = useState<any[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [videoAssistindo, setVideoAssistindo] = useState<any | null>(null);
+  const [videoRenomeando, setVideoRenomeando] = useState<any | null>(null);
+  const [novoTitulo, setNovoTitulo] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -283,6 +285,22 @@ export default function ProfileScreen() {
       }
     } catch {
       Alert.alert("Erro", "Falha de conexão com o servidor.");
+    }
+  };
+
+  const salvarNovoTitulo = async () => {
+    if (!videoRenomeando || !novoTitulo.trim()) return;
+    const data = await renameReplay(videoRenomeando.filename, novoTitulo.trim());
+    if (data && (data as any).success !== false) {
+      setMeusVideos(prev => prev.map(v =>
+        v.filename === videoRenomeando.filename ? { ...v, titulo: novoTitulo.trim() } : v
+      ));
+      setVideoRenomeando(null);
+      setNovoTitulo("");
+    } else {
+      const msg = "Não foi possível renomear. Tente novamente.";
+      if (Platform.OS === "web") window.alert(msg);
+      else Alert.alert("Erro", msg);
     }
   };
 
@@ -646,9 +664,19 @@ export default function ProfileScreen() {
                       >
                         <Ionicons name="trash" size={16} color="#FFF" />
                       </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setNovoTitulo(item.titulo || "");
+                          setVideoRenomeando(item);
+                        }}
+                        style={styles.videoThumbRename}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="pencil" size={15} color="#FFF" />
+                      </TouchableOpacity>
                     </View>
                     <Text style={styles.videoThumbTitle} numberOfLines={1}>
-                      {formatarTitulo(item.filename)}
+                      {item.titulo || formatarTitulo(item.filename)}
                     </Text>
                     <Text style={styles.videoThumbSub} numberOfLines={1}>
                       {item.arena}
@@ -686,6 +714,43 @@ export default function ProfileScreen() {
                 }
               />
             )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL RENOMEAR LANCE */}
+      <Modal
+        visible={!!videoRenomeando}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setVideoRenomeando(null)}
+      >
+        <View style={styles.renameOverlay}>
+          <View style={styles.renameBox}>
+            <Text style={styles.renameTitle}>Renomear lance</Text>
+            <TextInput
+              style={styles.renameInput}
+              placeholder="Ex: Golaço de bicicleta"
+              placeholderTextColor="#888"
+              value={novoTitulo}
+              onChangeText={setNovoTitulo}
+              maxLength={80}
+              autoFocus
+            />
+            <View style={styles.renameActions}>
+              <TouchableOpacity
+                style={[styles.renameBtn, styles.renameBtnCancel]}
+                onPress={() => setVideoRenomeando(null)}
+              >
+                <Text style={styles.renameBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.renameBtn, styles.renameBtnSave]}
+                onPress={salvarNovoTitulo}
+              >
+                <Text style={styles.renameBtnText}>Salvar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -960,7 +1025,52 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  videoThumbRename: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   videoThumbTitle: { color: "#1C1C1E", fontSize: 13, fontWeight: "700", marginTop: 6 },
+
+  // Modal de renomear
+  renameOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  renameBox: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#1A1A1A",
+    borderRadius: 16,
+    padding: 22,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  renameTitle: { color: "#FFF", fontSize: 17, fontWeight: "800", marginBottom: 14 },
+  renameInput: {
+    backgroundColor: "#0F0F0F",
+    color: "#FFF",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  renameActions: { flexDirection: "row", gap: 10, marginTop: 18 },
+  renameBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  renameBtnCancel: { backgroundColor: "#333" },
+  renameBtnSave: { backgroundColor: "#D30000" },
+  renameBtnText: { color: "#FFF", fontWeight: "700", fontSize: 14 },
   videoThumbSub: { color: "#8E8E93", fontSize: 11, marginTop: 1 },
 
   // Player (assistir lance)

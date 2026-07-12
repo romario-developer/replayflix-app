@@ -28,6 +28,7 @@ import {
   View,
 } from 'react-native';
 import {
+  atualizarBaba,
   Baba,
   criarBaba,
   deletarBaba,
@@ -48,6 +49,7 @@ export default function BabasScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [babaEditando, setBabaEditando] = useState<Baba | null>(null);
 
   // Formulário
   const [nome, setNome] = useState('');
@@ -88,21 +90,39 @@ export default function BabasScreen() {
       return avisar('Atenção', 'Horários no formato HH:MM (ex: 19:00).');
     }
     setSalvando(true);
-    const res = await criarBaba(arenaId!, {
+    const dados = {
       nome: nome.trim(),
       dia_semana: diaSemana,
       hora_inicio: horaInicio,
       hora_fim: horaFim,
-    });
+    };
+    // Mesmo formulário serve pra criar e pra editar
+    const res = babaEditando
+      ? await atualizarBaba(babaEditando.id, dados)
+      : await criarBaba(arenaId!, dados);
     setSalvando(false);
 
     if (res.ok) {
-      setShowForm(false);
-      setNome('');
+      fecharForm();
       carregar();
     } else {
-      avisar('Erro', res.erro || 'Não foi possível cadastrar.');
+      avisar('Erro', res.erro || 'Não foi possível salvar.');
     }
+  };
+
+  const abrirEdicao = (baba: Baba) => {
+    setBabaEditando(baba);
+    setNome(baba.nome);
+    setDiaSemana(baba.dia_semana);
+    setHoraInicio(formatHora(baba.hora_inicio));
+    setHoraFim(formatHora(baba.hora_fim));
+    setShowForm(true);
+  };
+
+  const fecharForm = () => {
+    setShowForm(false);
+    setBabaEditando(null);
+    setNome('');
   };
 
   const togglePagamento = async (baba: Baba) => {
@@ -201,6 +221,9 @@ export default function BabasScreen() {
                   {DIAS[item.dia_semana]} • {formatHora(item.hora_inicio)} às {formatHora(item.hora_fim)}
                 </Text>
               </View>
+              <TouchableOpacity onPress={() => abrirEdicao(item)} style={styles.cardDelete}>
+                <Ionicons name="pencil" size={17} color="#FFD700" />
+              </TouchableOpacity>
               <TouchableOpacity onPress={() => apagar(item)} style={styles.cardDelete}>
                 <Ionicons name="trash-outline" size={19} color="#FF4444" />
               </TouchableOpacity>
@@ -236,7 +259,7 @@ export default function BabasScreen() {
         visible={showForm}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowForm(false)}
+        onRequestClose={fecharForm}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -245,8 +268,10 @@ export default function BabasScreen() {
           <View style={styles.modalSheet}>
             <ScrollView>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Cadastrar baba</Text>
-                <TouchableOpacity onPress={() => setShowForm(false)}>
+                <Text style={styles.modalTitle}>
+                  {babaEditando ? 'Editar baba' : 'Cadastrar baba'}
+                </Text>
+                <TouchableOpacity onPress={fecharForm}>
                   <Ionicons name="close" size={26} color="#FFF" />
                 </TouchableOpacity>
               </View>
@@ -310,7 +335,9 @@ export default function BabasScreen() {
                 {salvando ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={styles.saveBtnText}>Cadastrar</Text>
+                  <Text style={styles.saveBtnText}>
+                    {babaEditando ? 'Salvar alterações' : 'Cadastrar'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </ScrollView>

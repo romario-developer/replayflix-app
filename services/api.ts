@@ -365,6 +365,18 @@ export const criarBaba = async (
   }
 };
 
+export const atualizarBaba = async (
+  babaId: number,
+  dados: { nome?: string; dia_semana?: number; hora_inicio?: string; hora_fim?: string }
+): Promise<{ ok: boolean; erro?: string }> => {
+  try {
+    await axios.put(`${API_URL}/babas/${babaId}`, dados);
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, erro: error?.response?.data?.erro || "Erro ao atualizar baba" };
+  }
+};
+
 export const deletarBaba = async (babaId: number): Promise<boolean> => {
   try {
     await axios.delete(`${API_URL}/babas/${babaId}`);

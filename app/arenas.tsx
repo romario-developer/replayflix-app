@@ -25,7 +25,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Arena, criarArena, deletarArena, getArenas } from '../services/api';
+import { Arena, atualizarArena, criarArena, deletarArena, getArenas } from '../services/api';
 
 export default function ArenasScreen() {
   const [arenas, setArenas] = useState<Arena[]>([]);
@@ -34,6 +34,7 @@ export default function ArenasScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [arenaEditando, setArenaEditando] = useState<Arena | null>(null);
 
   // Formulário
   const [nome, setNome] = useState('');
@@ -93,21 +94,43 @@ export default function ArenasScreen() {
       return;
     }
     setSalvando(true);
-    const res = await criarArena(
-      { nome: nome.trim(), cidade: cidade.trim(), owner_id: userId },
-      fotoUri
-    );
+    // Mesmo formulário serve pra cadastrar e pra editar
+    const res = arenaEditando
+      ? await atualizarArena(
+          arenaEditando.id,
+          { nome: nome.trim(), cidade: cidade.trim(), owner_id: userId },
+          fotoUri
+        )
+      : await criarArena(
+          { nome: nome.trim(), cidade: cidade.trim(), owner_id: userId },
+          fotoUri
+        );
     setSalvando(false);
 
     if (res.ok) {
-      setShowForm(false);
-      setNome('');
-      setCidade('');
-      setFotoUri(null);
+      fecharForm();
       carregar();
     } else {
-      Alert.alert('Erro', res.erro || 'Não foi possível cadastrar.');
+      const msg = res.erro || 'Não foi possível salvar.';
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Erro', msg);
     }
+  };
+
+  const abrirEdicao = (arena: Arena) => {
+    setArenaEditando(arena);
+    setNome(arena.nome);
+    setCidade(arena.cidade);
+    setFotoUri(null); // só troca a foto se escolher uma nova
+    setShowForm(true);
+  };
+
+  const fecharForm = () => {
+    setShowForm(false);
+    setArenaEditando(null);
+    setNome('');
+    setCidade('');
+    setFotoUri(null);
   };
 
   const apagar = (arena: Arena) => {
@@ -212,6 +235,9 @@ export default function ArenasScreen() {
                     <Ionicons name="calendar-outline" size={16} color="#FFF" />
                     <Text style={styles.cardBabasText}>Babas</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity onPress={() => abrirEdicao(item)} style={styles.cardEdit}>
+                    <Ionicons name="pencil" size={18} color="#FFD700" />
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => apagar(item)} style={styles.cardDelete}>
                     <Ionicons name="trash-outline" size={20} color="#FF4444" />
                   </TouchableOpacity>
@@ -227,7 +253,7 @@ export default function ArenasScreen() {
         visible={showForm}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowForm(false)}
+        onRequestClose={fecharForm}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -236,8 +262,10 @@ export default function ArenasScreen() {
           <View style={styles.modalSheet}>
             <ScrollView>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Cadastrar arena</Text>
-                <TouchableOpacity onPress={() => setShowForm(false)}>
+                <Text style={styles.modalTitle}>
+                  {arenaEditando ? 'Editar arena' : 'Cadastrar arena'}
+                </Text>
+                <TouchableOpacity onPress={fecharForm}>
                   <Ionicons name="close" size={26} color="#FFF" />
                 </TouchableOpacity>
               </View>
@@ -280,7 +308,9 @@ export default function ArenasScreen() {
                 {salvando ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={styles.saveBtnText}>Cadastrar</Text>
+                  <Text style={styles.saveBtnText}>
+                    {arenaEditando ? 'Salvar alterações' : 'Cadastrar'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
@@ -338,6 +368,7 @@ const styles = StyleSheet.create({
   cardCidade: { color: '#999', fontSize: 13, marginTop: 2 },
   cardOwner: { color: '#FFD700', fontSize: 11, marginTop: 4, fontWeight: '600' },
   cardDelete: { padding: 8 },
+  cardEdit: { padding: 8 },
   cardBabas: {
     flexDirection: 'row',
     alignItems: 'center',
