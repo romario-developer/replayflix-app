@@ -47,7 +47,10 @@ const DIAS_CURTO = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const formatHora = (h?: string) => (h || '').substring(0, 5); // "19:00:00" -> "19:00"
 
 export default function BabasScreen() {
-  const { arenaId, arenaNome } = useLocalSearchParams<{ arenaId: string; arenaNome?: string }>();
+  const { arenaId, arenaNome, gestor } = useLocalSearchParams<{ arenaId: string; arenaNome?: string; gestor?: string }>();
+  // Gestor (dono da arena) gerencia; os demais veem o status e pagam com PIX.
+  // Isso só esconde botões — o servidor valida a permissão de verdade.
+  const souGestor = gestor === '1';
 
   const [babas, setBabas] = useState<Baba[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,15 +239,21 @@ export default function BabasScreen() {
           <Text style={styles.headerTitle}>Babas</Text>
           {!!arenaNome && <Text style={styles.headerSubtitle}>{arenaNome}</Text>}
         </View>
-        <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addBtn}>
-          <Ionicons name="add" size={26} color="#FFF" />
-        </TouchableOpacity>
+        {souGestor ? (
+          <TouchableOpacity onPress={() => setShowForm(true)} style={styles.addBtn}>
+            <Ionicons name="add" size={26} color="#FFF" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.addBtn} />
+        )}
       </View>
 
       <View style={styles.infoBar}>
         <Ionicons name="information-circle-outline" size={16} color="#FFD700" />
         <Text style={styles.infoBarText}>
-          Mês atual: {mesAtualLabel()} — baba sem pagamento fica com o totem bloqueado no horário dele.
+          {souGestor
+            ? `Mês atual: ${mesAtualLabel()} — baba sem pagamento fica com o totem bloqueado no horário dele.`
+            : `Mês atual: ${mesAtualLabel()} — mensalidade pendente? Pague com PIX e o totem libera na hora.`}
         </Text>
       </View>
 
@@ -260,8 +269,9 @@ export default function BabasScreen() {
             <Ionicons name="calendar-outline" size={64} color="#333" />
             <Text style={styles.emptyText}>Nenhum baba cadastrado.</Text>
             <Text style={styles.emptyHint}>
-              Sem babas, o totem fica sempre liberado nesta arena.{'\n'}
-              Toque no + pra cadastrar o primeiro e ativar a cobrança.
+              {souGestor
+                ? 'Sem babas, o totem fica sempre liberado nesta arena.\nToque no + pra cadastrar o primeiro e ativar a cobrança.'
+                : 'O dono da arena ainda não cadastrou os babas por aqui.'}
             </Text>
           </View>
         }
@@ -275,12 +285,16 @@ export default function BabasScreen() {
                   {item.valor_mensalidade ? ` • R$ ${Number(item.valor_mensalidade).toFixed(2).replace('.', ',')}/mês` : ''}
                 </Text>
               </View>
-              <TouchableOpacity onPress={() => abrirEdicao(item)} style={styles.cardDelete}>
-                <Ionicons name="pencil" size={17} color="#FFD700" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => apagar(item)} style={styles.cardDelete}>
-                <Ionicons name="trash-outline" size={19} color="#FF4444" />
-              </TouchableOpacity>
+              {souGestor && (
+                <>
+                  <TouchableOpacity onPress={() => abrirEdicao(item)} style={styles.cardDelete}>
+                    <Ionicons name="pencil" size={17} color="#FFD700" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => apagar(item)} style={styles.cardDelete}>
+                    <Ionicons name="trash-outline" size={19} color="#FF4444" />
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
             <View style={styles.cardBottom}>
@@ -312,14 +326,16 @@ export default function BabasScreen() {
                     )}
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity
-                  style={[styles.payBtn, item.pago_mes_atual && styles.payBtnDesfazer]}
-                  onPress={() => togglePagamento(item)}
-                >
-                  <Text style={styles.payBtnText}>
-                    {item.pago_mes_atual ? 'Desfazer' : 'Marcar pago'}
-                  </Text>
-                </TouchableOpacity>
+                {souGestor && (
+                  <TouchableOpacity
+                    style={[styles.payBtn, item.pago_mes_atual && styles.payBtnDesfazer]}
+                    onPress={() => togglePagamento(item)}
+                  >
+                    <Text style={styles.payBtnText}>
+                      {item.pago_mes_atual ? 'Desfazer' : 'Marcar pago'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>

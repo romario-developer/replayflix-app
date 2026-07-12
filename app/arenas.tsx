@@ -221,20 +221,22 @@ export default function ArenasScreen() {
                 <Text style={styles.cardCidade}>{item.cidade}</Text>
                 {ehDono && <Text style={styles.cardOwner}>Minha arena</Text>}
               </View>
+              {/* Babas: aberto pra todo mundo — é onde o organizador
+                  paga a mensalidade com PIX. Gerenciar é só do dono. */}
+              <TouchableOpacity
+                onPress={() =>
+                  router.push({
+                    pathname: '/babas',
+                    params: { arenaId: item.id, arenaNome: item.nome, gestor: ehDono ? '1' : '0' },
+                  })
+                }
+                style={styles.cardBabas}
+              >
+                <Ionicons name="calendar-outline" size={16} color="#FFF" />
+                <Text style={styles.cardBabasText}>Babas</Text>
+              </TouchableOpacity>
               {ehDono && (
                 <>
-                  <TouchableOpacity
-                    onPress={() =>
-                      router.push({
-                        pathname: '/babas',
-                        params: { arenaId: item.id, arenaNome: item.nome },
-                      })
-                    }
-                    style={styles.cardBabas}
-                  >
-                    <Ionicons name="calendar-outline" size={16} color="#FFF" />
-                    <Text style={styles.cardBabasText}>Babas</Text>
-                  </TouchableOpacity>
                   <TouchableOpacity onPress={() => abrirEdicao(item)} style={styles.cardEdit}>
                     <Ionicons name="pencil" size={18} color="#FFD700" />
                   </TouchableOpacity>
