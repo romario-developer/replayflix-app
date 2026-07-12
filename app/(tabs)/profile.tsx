@@ -24,6 +24,7 @@ import {
 import { getReplays, deleteReplay, updateUsuario, deleteUsuario, getUsuario, uploadAvatar, updatePosicao } from "../../services/api";
 
 // Player simples pra assistir um lance dentro do gerenciador (web e nativo)
+// Vídeo e música repetem em loop até a pessoa fechar.
 const PlayerLance = ({ url }: { url: string }) => {
   if (Platform.OS === "web") {
     return (
@@ -31,6 +32,7 @@ const PlayerLance = ({ url }: { url: string }) => {
         src={url}
         controls
         autoPlay
+        loop
         playsInline
         style={{ width: "100%", height: "100%", objectFit: "contain", background: "#000" }}
       />
@@ -41,7 +43,7 @@ const PlayerLance = ({ url }: { url: string }) => {
 
 const PlayerLanceNative = ({ url }: { url: string }) => {
   const player = useVideoPlayer(url, (p) => {
-    p.loop = false;
+    p.loop = true;
     p.play();
   });
   return <VideoView player={player} style={{ width: "100%", height: "100%" }} contentFit="contain" allowsFullscreen nativeControls />;
