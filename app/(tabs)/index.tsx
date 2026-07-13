@@ -164,7 +164,7 @@ const InlineVideoPlayer = ({ videoUrl, isActive, soundOn, onToggleSound }: {
           muted={!soundOn}
           loop
           playsInline
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
           onWaiting={() => setLoading(true)}
           onPlaying={() => setLoading(false)}
           onCanPlay={() => setLoading(false)}
@@ -216,7 +216,7 @@ const InlineVideoPlayer = ({ videoUrl, isActive, soundOn, onToggleSound }: {
           player={player}
           style={styles.feedCardMedia}
           nativeControls={false}
-          contentFit="cover"
+          contentFit="contain"
           allowsFullscreen
         />
       </TouchableOpacity>
@@ -329,11 +329,11 @@ const InstagramFeedCard = ({
            <Image
   source={{ uri: video.thumbnail_url }}
   style={styles.feedCardMedia}
-  contentFit="cover"
+  contentFit="contain"
   transition={200}
   priority={isActive ? 'high' : 'normal'}
   placeholder={{ blurhash: 'L00000fQfQfQfQfQfQfQfQfQfQfQ' }}
-  placeholderContentFit="cover"
+  placeholderContentFit="contain"
   cachePolicy="memory-disk"
 />
             <View style={styles.feedPlayOverlay}>
