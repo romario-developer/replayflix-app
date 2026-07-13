@@ -25,7 +25,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Arena, atualizarArena, criarArena, deletarArena, getArenas } from '../services/api';
+import { Arena, atualizarArena, criarArena, deletarArena, enviarPatrocinio, getArenas, removerPatrocinio } from '../services/api';
 
 export default function ArenasScreen() {
   const [arenas, setArenas] = useState<Arena[]>([]);
@@ -40,6 +40,7 @@ export default function ArenasScreen() {
   const [nome, setNome] = useState('');
   const [cidade, setCidade] = useState('');
   const [fotoUri, setFotoUri] = useState<string | null>(null);
+  const [bannerUri, setBannerUri] = useState<string | null>(null); // faixa de patrocinadores
   const [salvando, setSalvando] = useState(false);
 
   const carregar = useCallback(async () => {
@@ -84,6 +85,31 @@ export default function ArenasScreen() {
     }
   };
 
+  const escolherBanner = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permissão', 'Precisamos acesso às fotos pra escolher a faixa.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.9, // sem crop forçado: a faixa é larga (ex: 854x60)
+    });
+    if (!result.canceled && result.assets[0]) {
+      setBannerUri(result.assets[0].uri);
+    }
+  };
+
+  const tirarBanner = async () => {
+    if (!arenaEditando) return;
+    const ok = await removerPatrocinio(arenaEditando.id);
+    if (ok) {
+      setBannerUri(null);
+      setArenaEditando({ ...arenaEditando, patrocinio_url: null });
+      carregar();
+    }
+  };
+
   const salvar = async () => {
     if (!userId) {
       Alert.alert('Erro', 'Você precisa estar logado.');
@@ -108,6 +134,15 @@ export default function ArenasScreen() {
     setSalvando(false);
 
     if (res.ok) {
+      // Faixa de patrocinadores nova? Sobe depois de salvar a arena.
+      if (arenaEditando && bannerUri) {
+        const url = await enviarPatrocinio(arenaEditando.id, bannerUri);
+        if (!url) {
+          const msg = 'Arena salva, mas a faixa de patrocinadores falhou. Tente de novo.';
+          if (Platform.OS === 'web') window.alert(msg);
+          else Alert.alert('Atenção', msg);
+        }
+      }
       fecharForm();
       carregar();
     } else {
@@ -122,6 +157,7 @@ export default function ArenasScreen() {
     setNome(arena.nome);
     setCidade(arena.cidade);
     setFotoUri(null); // só troca a foto se escolher uma nova
+    setBannerUri(null);
     setShowForm(true);
   };
 
@@ -131,6 +167,7 @@ export default function ArenasScreen() {
     setNome('');
     setCidade('');
     setFotoUri(null);
+    setBannerUri(null);
   };
 
   const apagar = (arena: Arena) => {
@@ -302,6 +339,35 @@ export default function ArenasScreen() {
                 )}
               </TouchableOpacity>
 
+              {arenaEditando && (
+                <>
+                  <Text style={styles.label}>
+                    Faixa de patrocinadores (aparece no rodapé dos vídeos)
+                  </Text>
+                  <TouchableOpacity style={styles.bannerBtn} onPress={escolherBanner}>
+                    {bannerUri || arenaEditando.patrocinio_url ? (
+                      <Image
+                        source={{ uri: bannerUri || arenaEditando.patrocinio_url! }}
+                        style={styles.bannerPreview}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <>
+                        <Ionicons name="megaphone-outline" size={24} color="#888" />
+                        <Text style={styles.fotoBtnText}>
+                          Escolher imagem larga (ex: 854×60) com as logos
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                  {!!arenaEditando.patrocinio_url && !bannerUri && (
+                    <TouchableOpacity onPress={tirarBanner}>
+                      <Text style={styles.removerBannerText}>Remover faixa atual</Text>
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
+
               <TouchableOpacity
                 style={[styles.saveBtn, salvando && { opacity: 0.6 }]}
                 onPress={salvar}
@@ -446,6 +512,24 @@ const styles = StyleSheet.create({
   },
   fotoBtnText: { color: '#888', fontSize: 13, marginTop: 8 },
   fotoPreview: { width: '100%', height: '100%' },
+  bannerBtn: {
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    height: 72,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+  },
+  bannerPreview: { width: '100%', height: '100%' },
+  removerBannerText: {
+    color: '#FF6B6B',
+    fontSize: 12,
+    marginTop: 8,
+    textDecorationLine: 'underline',
+  },
 
   saveBtn: {
     backgroundColor: '#D30000',

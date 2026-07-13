@@ -6,17 +6,17 @@ import { Platform } from "react-native";
 // Anexa a foto escolhida no FormData do jeito certo em cada plataforma.
 // Na web o formato {uri, name, type} do React Native NÃO funciona (vira
 // "[object Object]" e o servidor não recebe arquivo) — precisa de um Blob.
-const appendFoto = async (formData: FormData, fotoUri: string) => {
+const appendFoto = async (formData: FormData, fotoUri: string, campo: string = "foto") => {
   if (Platform.OS === "web") {
     const blob = await (await fetch(fotoUri)).blob();
     const ext = (blob.type.split("/")[1] || "jpg").replace("jpeg", "jpg");
-    formData.append("foto", blob, `foto.${ext}`);
+    formData.append(campo, blob, `${campo}.${ext}`);
   } else {
-    const fileName = fotoUri.split("/").pop() || "foto.jpg";
+    const fileName = fotoUri.split("/").pop() || `${campo}.jpg`;
     const match = /\.(\w+)$/.exec(fileName);
     const type = match ? `image/${match[1]}` : "image/jpeg";
     // @ts-ignore — no nativo o RN aceita esse formato em FormData
-    formData.append("foto", { uri: fotoUri, name: fileName, type });
+    formData.append(campo, { uri: fotoUri, name: fileName, type });
   }
 };
 
@@ -86,6 +86,7 @@ export type Arena = {
   nome: string;
   cidade: string;
   foto_url?: string | null;
+  patrocinio_url?: string | null;
   owner_id?: string | null;
   created_at?: string;
 };
@@ -390,6 +391,29 @@ export const atualizarArena = async (
   } catch (error: any) {
     const msg = error?.response?.data?.erro || 'Erro ao atualizar arena';
     return { ok: false, erro: msg };
+  }
+};
+
+// Faixa de patrocinadores da arena (queimada no rodapé dos vídeos novos)
+export const enviarPatrocinio = async (arenaId: string, bannerUri: string): Promise<string | null> => {
+  try {
+    const formData = new FormData();
+    await appendFoto(formData, bannerUri, "banner");
+    const response = await axios.post(`${API_URL}/arenas/${arenaId}/patrocinio`, formData);
+    return response.data.patrocinio_url || null;
+  } catch (error) {
+    console.error("Erro ao enviar faixa de patrocínio:", error);
+    return null;
+  }
+};
+
+export const removerPatrocinio = async (arenaId: string): Promise<boolean> => {
+  try {
+    await axios.delete(`${API_URL}/arenas/${arenaId}/patrocinio`);
+    return true;
+  } catch (error) {
+    console.error("Erro ao remover faixa de patrocínio:", error);
+    return false;
   }
 };
 
