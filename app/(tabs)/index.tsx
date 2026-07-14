@@ -28,7 +28,7 @@ import {
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
-import { getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, ReplayVideo, Comentario, getArenas, Arena } from "../../services/api";
+import { API_URL, getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, ReplayVideo, Comentario, getArenas, Arena } from "../../services/api";
 import { router, useFocusEffect } from 'expo-router';
 
 if (Platform.OS === 'android') {
@@ -747,11 +747,14 @@ export default function HomeScreen() {
 
   const handleShare = async (video: ReplayVideo) => {
     try {
-      const url = video.video_url ||
-        `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${video.filename}`;
+      // Link curto da página de compartilhamento (preview bonito no
+      // WhatsApp + player + botão de baixar), em vez da URL crua do vídeo
+      const base = API_URL.replace(/\/api\/?$/, "");
+      const url = `${base}/v/${video.id}`;
+      const titulo = video.titulo || "Lance Oficial ⚽";
       await Share.share({
-        message: `Olha esse lance na ReplayFlix! ⚽\nLocal: ${video.arena}`,
-        url: url,
+        message: `${titulo} — olha esse lance na ReplayFlix!\n${url}`,
+        url,
       });
     } catch (error) {
       console.error("Erro ao compartilhar:", error);
