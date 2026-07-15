@@ -28,7 +28,7 @@ import {
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
-import { API_URL, getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, ReplayVideo, Comentario, getArenas, Arena } from "../../services/api";
+import { API_URL, getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, getConfig, ReplayVideo, Comentario, AppConfig, getArenas, Arena } from "../../services/api";
 import { router, useFocusEffect } from 'expo-router';
 
 if (Platform.OS === 'android') {
@@ -461,6 +461,22 @@ const LiveStoriesBar = ({
   );
 };
 
+// Card de destaque no topo do feed (vídeo de propaganda / onboarding).
+// Reaproveita o player inline; toca em loop, mudo por padrão.
+const DestaqueCard = ({ videoUrl, titulo, soundOn, onToggleSound }: {
+  videoUrl: string; titulo?: string; soundOn: boolean; onToggleSound: () => void;
+}) => (
+  <View style={styles.destaqueCard}>
+    <View style={styles.destaqueLabelRow}>
+      <Ionicons name="megaphone" size={14} color="#FFD54A" />
+      <Text style={styles.destaqueLabel}>{titulo || 'Conheça o ReplayFlix'}</Text>
+    </View>
+    <View style={styles.feedCardMediaWrapper}>
+      <InlineVideoPlayer videoUrl={videoUrl} isActive={true} soundOn={soundOn} onToggleSound={onToggleSound} />
+    </View>
+  </View>
+);
+
 export default function HomeScreen() {
   const [replays, setReplays] = useState<ReplayVideo[]>([]);
   const [arenas, setArenas] = useState<Arena[]>([]);
@@ -478,6 +494,7 @@ export default function HomeScreen() {
   // const [viewMode, setViewMode] = useState<'feed' | 'grid'>('feed'); // Seletor do visualizador
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
   const [userAvatar, setUserAvatar] = useState('https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80');
+  const [destaque, setDestaque] = useState<AppConfig>({});
 
   // Configurações para rastrear qual item está visível e disparar o autoplay
   const viewabilityConfig = useRef({
@@ -571,6 +588,11 @@ export default function HomeScreen() {
   useEffect(() => {
     carregarDados();
   }, [carregarDados]);
+
+  // Vídeo de destaque (propaganda no topo do feed)
+  useEffect(() => {
+    getConfig().then(setDestaque).catch(() => {});
+  }, []);
 
   // Som do feed: começa mudo (regra dos navegadores); o usuário ativa
   // uma vez no alto-falante do vídeo e a escolha fica salva pra sempre.
@@ -852,11 +874,21 @@ export default function HomeScreen() {
   : replays}
             keyExtractor={(item) => item.id}
             ListHeaderComponent={
-  <LiveStoriesBar 
-    arenas={arenas}
-    selectedArenaId={selectedArenaId}
-    onSelectArena={setSelectedArenaId}
-  />
+  <>
+    {destaque.destaque_ativo === '1' && !!destaque.destaque_video_url && !selectedArenaId && (
+      <DestaqueCard
+        videoUrl={destaque.destaque_video_url}
+        titulo={destaque.destaque_titulo}
+        soundOn={soundOn}
+        onToggleSound={toggleSound}
+      />
+    )}
+    <LiveStoriesBar
+      arenas={arenas}
+      selectedArenaId={selectedArenaId}
+      onSelectArena={setSelectedArenaId}
+    />
+  </>
 }
             refreshControl={
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D30000" />
@@ -880,6 +912,15 @@ export default function HomeScreen() {
               />
             )}
             contentContainerStyle={{ paddingBottom: 100 }}
+            ListEmptyComponent={
+              !loading ? (
+                <View style={styles.feedEmpty}>
+                  <Ionicons name="football-outline" size={54} color="#333" />
+                  <Text style={styles.feedEmptyText}>Os lances vão aparecer aqui.</Text>
+                  <Text style={styles.feedEmptySub}>Assim que a galera bater o botão na quadra, os replays surgem no topo.</Text>
+                </View>
+              ) : null
+            }
             onEndReached={carregarMais}
             onEndReachedThreshold={0.5}
             ListFooterComponent={
@@ -1410,4 +1451,25 @@ storyAllIcon: {
     justifyContent: 'center',
     alignItems: 'center',
   },
+  destaqueCard: {
+    marginHorizontal: 10,
+    marginTop: 10,
+    marginBottom: 6,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,213,74,0.35)',
+    backgroundColor: '#12100a',
+  },
+  destaqueLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  destaqueLabel: { color: '#FFD54A', fontSize: 13, fontWeight: '800', letterSpacing: 0.3 },
+  feedEmpty: { alignItems: 'center', paddingHorizontal: 40, paddingTop: 40, gap: 8 },
+  feedEmptyText: { color: '#888', fontSize: 16, fontWeight: '700', marginTop: 8 },
+  feedEmptySub: { color: '#666', fontSize: 13, textAlign: 'center', lineHeight: 19 },
 });

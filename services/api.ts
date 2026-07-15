@@ -107,6 +107,12 @@ export type Baba = {
   ano_atual?: number;
 };
 
+export type AppConfig = {
+  destaque_video_url?: string;
+  destaque_titulo?: string;
+  destaque_ativo?: string; // "1" | "0"
+};
+
 export type PixGerado = {
   pagamento_id: number;
   valor: number;
@@ -392,6 +398,47 @@ export const atualizarArena = async (
   } catch (error: any) {
     const msg = error?.response?.data?.erro || 'Erro ao atualizar arena';
     return { ok: false, erro: msg };
+  }
+};
+
+// ---------------------------------------------------------
+//  Config do app + vídeo de destaque (propaganda no topo do feed)
+// ---------------------------------------------------------
+export const getConfig = async (): Promise<AppConfig> => {
+  try {
+    return (await axios.get(`${API_URL}/config`)).data;
+  } catch (error) {
+    return {};
+  }
+};
+
+// Salva o vídeo de destaque. videoUri opcional (só troca se enviar um novo).
+export const salvarDestaque = async (
+  dados: { titulo?: string; ativo?: boolean },
+  videoUri?: string | null
+): Promise<{ ok: boolean; config?: AppConfig; erro?: string }> => {
+  try {
+    const formData = new FormData();
+    if (dados.titulo !== undefined) formData.append("titulo", dados.titulo);
+    if (dados.ativo !== undefined) formData.append("ativo", dados.ativo ? "1" : "0");
+
+    if (videoUri) {
+      if (Platform.OS === "web") {
+        const blob = await (await fetch(videoUri)).blob();
+        formData.append("video", blob, "destaque.mp4");
+      } else {
+        const fileName = videoUri.split("/").pop() || "destaque.mp4";
+        // @ts-ignore — RN aceita { uri, name, type } em FormData
+        formData.append("video", { uri: videoUri, name: fileName, type: "video/mp4" });
+      }
+    }
+
+    const resp = await axios.post(`${API_URL}/config/destaque`, formData, {
+      timeout: 120000, // vídeo pode ser grande
+    });
+    return { ok: true, config: resp.data };
+  } catch (error: any) {
+    return { ok: false, erro: error?.response?.data?.erro || "Erro ao salvar o vídeo de destaque" };
   }
 };
 

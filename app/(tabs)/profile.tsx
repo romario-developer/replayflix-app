@@ -501,6 +501,13 @@ export default function ProfileScreen() {
             )}
             {isAdmin &&
               renderMenuItem(
+                "megaphone",
+                "Vídeo de Destaque (admin)",
+                "#FFD54A",
+                () => router.push("/destaque"),
+              )}
+            {isAdmin &&
+              renderMenuItem(
                 "key",
                 "Código de Recuperação (admin)",
                 "#B87DFF",
