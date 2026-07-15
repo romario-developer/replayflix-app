@@ -11,7 +11,7 @@
 import { ScrollViewStyleReset } from 'expo-router/html';
 import { type PropsWithChildren } from 'react';
 
-const API_URL = 'https://replayflix-backend.onrender.com/api';
+const API_URL = 'https://api.replayflix.com.br/api';
 
 export default function Root({ children }: PropsWithChildren) {
   return (

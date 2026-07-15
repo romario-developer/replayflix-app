@@ -27,7 +27,7 @@ const getApiUrl = () => {
     const ip = debuggerHost.split(":")[0];
     return ip ? `http://${ip}:3000/api` : "http://localhost:3000/api";
   }
-  return "https://replayflix-backend.onrender.com/api";
+  return "https://api.replayflix.com.br/api";
 };
 
 export const API_URL = getApiUrl();
