@@ -87,6 +87,7 @@ export type Arena = {
   cidade: string;
   foto_url?: string | null;
   patrocinio_url?: string | null;
+  liberada?: boolean;
   owner_id?: string | null;
   created_at?: string;
 };
@@ -391,6 +392,18 @@ export const atualizarArena = async (
   } catch (error: any) {
     const msg = error?.response?.data?.erro || 'Erro ao atualizar arena';
     return { ok: false, erro: msg };
+  }
+};
+
+// Liga/desliga a liberação total da arena (Plano B: Prefeitura/patrocínio
+// paga a quadra inteira e o totem libera pra todos, sem cobrar por baba)
+export const setLiberacaoArena = async (arenaId: string, liberada: boolean): Promise<boolean> => {
+  try {
+    await axios.put(`${API_URL}/arenas/${arenaId}/liberacao`, { liberada });
+    return true;
+  } catch (error) {
+    console.error("Erro ao alterar liberação da arena:", error);
+    return false;
   }
 };
 

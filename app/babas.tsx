@@ -24,6 +24,7 @@ import {
   Share,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -36,9 +37,11 @@ import {
   deletarBaba,
   desfazerPagamentoBaba,
   gerarPixBaba,
+  getArena,
   getBabas,
   pagarBaba,
   PixGerado,
+  setLiberacaoArena,
 } from '../services/api';
 
 const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -71,10 +74,16 @@ export default function BabasScreen() {
   const [gerandoPix, setGerandoPix] = useState<number | null>(null);
   const [pixPago, setPixPago] = useState(false);
 
+  // Plano B: liberação total da arena (Prefeitura/patrocínio)
+  const [liberada, setLiberada] = useState(false);
+  const [salvandoLiberacao, setSalvandoLiberacao] = useState(false);
+
   const carregar = useCallback(async () => {
     if (!arenaId) return;
     try {
-      setBabas(await getBabas(arenaId));
+      const [lista, arena] = await Promise.all([getBabas(arenaId), getArena(arenaId)]);
+      setBabas(lista);
+      if (arena) setLiberada(!!arena.liberada);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -84,6 +93,17 @@ export default function BabasScreen() {
   useEffect(() => {
     carregar();
   }, [carregar]);
+
+  const alternarLiberacao = async (valor: boolean) => {
+    setLiberada(valor); // otimista
+    setSalvandoLiberacao(true);
+    const ok = await setLiberacaoArena(arenaId!, valor);
+    setSalvandoLiberacao(false);
+    if (!ok) {
+      setLiberada(!valor); // reverte
+      avisar('Erro', 'Não foi possível alterar a liberação. Tente de novo.');
+    }
+  };
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -248,14 +268,39 @@ export default function BabasScreen() {
         )}
       </View>
 
-      <View style={styles.infoBar}>
-        <Ionicons name="information-circle-outline" size={16} color="#FFD700" />
-        <Text style={styles.infoBarText}>
-          {souGestor
-            ? `Mês atual: ${mesAtualLabel()} — baba sem pagamento fica com o totem bloqueado no horário dele.`
-            : `Mês atual: ${mesAtualLabel()} — mensalidade pendente? Pague com PIX e o totem libera na hora.`}
-        </Text>
-      </View>
+      {/* Plano B: interruptor de liberação total (só o gestor/admin) */}
+      {souGestor && (
+        <View style={[styles.liberBox, liberada && styles.liberBoxOn]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.liberTitulo}>
+              {liberada ? '✅ Quadra liberada' : 'Quadra liberada (Prefeitura / patrocínio)'}
+            </Text>
+            <Text style={styles.liberSub}>
+              {liberada
+                ? 'O totem funciona pra todos os horários, sem cobrar por baba. Os pagamentos abaixo ficam opcionais.'
+                : 'Ligue quando a Prefeitura ou um patrocinador pagar a quadra inteira — aí o totem libera pra todos, de graça.'}
+            </Text>
+          </View>
+          <Switch
+            value={liberada}
+            onValueChange={alternarLiberacao}
+            disabled={salvandoLiberacao}
+            trackColor={{ false: '#333', true: '#00A344' }}
+            thumbColor="#fff"
+          />
+        </View>
+      )}
+
+      {!liberada && (
+        <View style={styles.infoBar}>
+          <Ionicons name="information-circle-outline" size={16} color="#FFD700" />
+          <Text style={styles.infoBarText}>
+            {souGestor
+              ? `Mês atual: ${mesAtualLabel()} — baba sem pagamento fica com o totem bloqueado no horário dele.`
+              : `Mês atual: ${mesAtualLabel()} — mensalidade pendente? Pague com PIX e o totem libera na hora.`}
+          </Text>
+        </View>
+      )}
 
       <FlatList
         data={babas}
@@ -538,6 +583,25 @@ const styles = StyleSheet.create({
     borderBottomColor: '#222',
   },
   infoBarText: { color: '#B8A24A', fontSize: 12, flex: 1, lineHeight: 17 },
+
+  liberBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    marginHorizontal: 16,
+    marginTop: 14,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+  },
+  liberBoxOn: {
+    backgroundColor: '#0a1f10',
+    borderColor: 'rgba(0,209,90,0.4)',
+  },
+  liberTitulo: { color: '#FFF', fontSize: 14, fontWeight: '800' },
+  liberSub: { color: '#9a9aa4', fontSize: 11.5, lineHeight: 16, marginTop: 4 },
 
   card: {
     backgroundColor: '#121212',
