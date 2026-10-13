@@ -23,13 +23,19 @@ import {
     ActivityIndicator,
     LayoutAnimation,
     UIManager,
-    KeyboardAvoidingView
+    KeyboardAvoidingView,
+    Linking
 } from "react-native";
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
 import { API_URL, getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, getConfig, ReplayVideo, Comentario, AppConfig, getArenas, Arena } from "../../services/api";
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+
+// Endereço do app (pra montar o link do baba). Na web usa o próprio domínio.
+const APP_URL = Platform.OS === 'web' && typeof window !== 'undefined'
+  ? window.location.origin
+  : 'https://replayflix.com.br';
 
 if (Platform.OS === 'android') {
   if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -266,6 +272,7 @@ const InstagramFeedCard = ({
   toggleLike,
   isActive,
   handleShare,
+  handleDownload,
   openComments,
   claimLance,
   unclaimLance,
@@ -279,6 +286,7 @@ const InstagramFeedCard = ({
   toggleLike: (video: ReplayVideo) => void;
   isActive: boolean;
   handleShare: (video: ReplayVideo) => void;
+  handleDownload: (video: ReplayVideo) => void;
   openComments: (video: ReplayVideo) => void;
   claimLance: (video: ReplayVideo) => void;
   unclaimLance: (video: ReplayVideo) => void;
@@ -290,8 +298,9 @@ const InstagramFeedCard = ({
 }) => {
   const isLiked = !!video.liked_by_me;
   const isMyVideo = video.user_id && currentUserId && video.user_id.toString() === currentUserId.toString();
-  // Lance sem dono + usuário logado = pode reivindicar ("esse gol é meu!")
-  const podeReivindicar = !video.user_id && !!currentUserId;
+  // Lance sem dono = pode reivindicar ("esse gol é meu!"). Sem conta, o botão
+  // aparece igual e leva pro login — é o melhor convite pra criar conta.
+  const podeReivindicar = !video.user_id;
   // O card representa a ARENA (nunca a foto do usuário): foto da arena se
   // tiver, senão as iniciais num avatar colorido.
   const avatarToUse = arenaFoto
@@ -354,6 +363,9 @@ const InstagramFeedCard = ({
           </TouchableOpacity>
           <TouchableOpacity onPress={() => handleShare(video)} style={styles.feedActionButton}>
             <Ionicons name="paper-plane-outline" size={24} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => handleDownload(video)} style={styles.feedActionButton}>
+            <Ionicons name="download-outline" size={25} color="#FFF" />
           </TouchableOpacity>
           {podeReivindicar && (
             <TouchableOpacity onPress={() => claimLance(video)} style={styles.claimButton}>
@@ -480,7 +492,9 @@ const DestaqueCard = ({ videoUrl, titulo, soundOn, onToggleSound }: {
 export default function HomeScreen() {
   const [replays, setReplays] = useState<ReplayVideo[]>([]);
   const [arenas, setArenas] = useState<Arena[]>([]);
-  const [selectedArenaId, setSelectedArenaId] = useState<string | null>(null);
+  // Link do baba (replayflix.com.br/?arena=ID) abre o feed já filtrado
+  const { arena: arenaDoLink } = useLocalSearchParams<{ arena?: string }>();
+  const [selectedArenaId, setSelectedArenaId] = useState<string | null>(arenaDoLink || null);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -683,9 +697,26 @@ export default function HomeScreen() {
     }
   }, [loadingMore, hasMore, loading, userId, replays.length]);
 
+  useEffect(() => {
+    if (arenaDoLink) setSelectedArenaId(arenaDoLink);
+  }, [arenaDoLink]);
+
+  // Assistir é livre; curtir, comentar, baixar e "É meu!" pedem conta.
+  const pedirLogin = (acao: string) => {
+    const msg = `Entre na sua conta pra ${acao}. É rápido!`;
+    if (Platform.OS === "web") {
+      if (window.confirm(`${msg}\n\nIr pra tela de entrar?`)) router.push("/login");
+    } else {
+      Alert.alert("Entre na ReplayFlix", msg, [
+        { text: "Agora não", style: "cancel" },
+        { text: "Entrar", onPress: () => router.push("/login") },
+      ]);
+    }
+  };
+
   const toggleLike = async (video: ReplayVideo) => {
     if (!userId) {
-      console.warn("Usuário não logado — like ignorado");
+      pedirLogin("curtir o lance");
       return;
     }
 
@@ -722,7 +753,7 @@ export default function HomeScreen() {
   // "Esse lance é meu!": vincula o lance ao perfil e já favorita
   const reivindicarLance = async (video: ReplayVideo) => {
     if (!userId) {
-      console.warn("Usuário não logado — reivindicação ignorada");
+      pedirLogin("marcar esse lance como seu");
       return;
     }
     const resp = await vincularReplay(video.filename, userId);
@@ -783,7 +814,58 @@ export default function HomeScreen() {
     }
   };
 
+  // Baixar o lance (só com conta). O ?download= faz o Supabase mandar o
+  // arquivo como anexo, então o navegador salva sem sair do app.
+  const handleDownload = (video: ReplayVideo) => {
+    if (!userId) {
+      pedirLogin("baixar o lance");
+      return;
+    }
+    const base = video.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${video.filename}`;
+    const nome = (video.titulo || "lance").normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "lance";
+    const url = `${base}?download=${encodeURIComponent(`ReplayFlix-${nome}.mp4`)}`;
+    if (Platform.OS === "web") {
+      const a = document.createElement("a");
+      a.href = url;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } else {
+      Linking.openURL(url);
+    }
+  };
+
+  // Link pro grupo do baba: abre o app já filtrado nos lances da arena
+  const compartilharArena = async () => {
+    const arena = arenas.find(a => a.id === selectedArenaId);
+    if (!arena) return;
+    const url = `${APP_URL}/?arena=${arena.id}`;
+    const message = `⚽ Lances do baba — ${arena.nome}! Assiste aqui:\n${url}`;
+    // Navegador de computador geralmente não tem menu de compartilhar:
+    // copia o link e avisa, pra colar no grupo do WhatsApp.
+    if (Platform.OS === "web" && !(navigator as any).share) {
+      try {
+        await navigator.clipboard.writeText(message);
+        window.alert("Link copiado! Cola no grupo do baba.");
+      } catch {
+        window.prompt("Copie o link do baba:", url);
+      }
+      return;
+    }
+    try {
+      await Share.share({ message, url });
+    } catch (error) {
+      console.error("Erro ao compartilhar arena:", error);
+    }
+  };
+
   const addComment = async () => {
+    if (!userId) {
+      pedirLogin("comentar");
+      return;
+    }
     if (!selectedVideo || !commentText.trim()) return;
     const texto = commentText.trim();
     setCommentText("");
@@ -848,12 +930,18 @@ export default function HomeScreen() {
           <Text style={styles.headerTitle}>REPLAY<Text style={styles.highlight}>FLIX</Text></Text>
           <View style={styles.onlineStatus} />
         </View>
-        <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
-           <Image
-             source={{ uri: userAvatar }}
-             style={styles.avatar}
-           />
-        </TouchableOpacity>
+        {userId ? (
+          <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
+             <Image
+               source={{ uri: userAvatar }}
+               style={styles.avatar}
+             />
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.entrarBtn} onPress={() => router.push('/login')}>
+            <Text style={styles.entrarBtnText}>Entrar</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {selectedVideo ? (
@@ -888,6 +976,12 @@ export default function HomeScreen() {
       selectedArenaId={selectedArenaId}
       onSelectArena={setSelectedArenaId}
     />
+    {selectedArenaId && arenas.some(a => a.id === selectedArenaId) && (
+      <TouchableOpacity style={styles.linkBabaBtn} onPress={compartilharArena} activeOpacity={0.8}>
+        <Ionicons name="logo-whatsapp" size={18} color="#FFF" />
+        <Text style={styles.linkBabaText}>Mandar link desses lances pro grupo</Text>
+      </TouchableOpacity>
+    )}
   </>
 }
             refreshControl={
@@ -901,6 +995,7 @@ export default function HomeScreen() {
                 toggleLike={toggleLike}
                 isActive={item.id === activeVideoId}
                 handleShare={handleShare}
+                handleDownload={handleDownload}
                 openComments={openCommentsWithAnimation}
                 claimLance={reivindicarLance}
                 unclaimLance={desmarcarLance}
@@ -1032,6 +1127,35 @@ const styles = StyleSheet.create({
   },
   profileBtn: {
     padding: 2,
+  },
+  entrarBtn: {
+    backgroundColor: '#D30000',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 18,
+  },
+  entrarBtnText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  linkBabaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#1F8F4E',
+    marginHorizontal: 12,
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  linkBabaText: {
+    color: '#FFF',
+    fontWeight: 'bold',
+    fontSize: 14,
+    flexShrink: 1,
   },
   avatar: {
     width: 36,

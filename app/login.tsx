@@ -14,7 +14,60 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { loginUser, cadastrarUser } from "../services/api";
+import { loginUser, cadastrarUser, loginGoogle } from "../services/api";
+
+// Client ID OAuth (web) do Google, definido no Vercel. Sem ele o botão não aparece.
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "";
+
+// Botão oficial do Google (Google Identity Services). Só na versão web,
+// que é como o app roda hoje; devolve o "credential" (ID token) pro app.
+function BotaoGoogle({ onCredential }: { onCredential: (credential: string) => void }) {
+  const callbackRef = useRef(onCredential);
+  callbackRef.current = onCredential;
+
+  React.useEffect(() => {
+    if (Platform.OS !== "web" || !GOOGLE_CLIENT_ID) return;
+    const desenhar = () => {
+      const g = (window as any).google;
+      const alvo = document.getElementById("botao-google");
+      if (!g?.accounts?.id || !alvo) return;
+      g.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (r: any) => r?.credential && callbackRef.current(r.credential),
+      });
+      g.accounts.id.renderButton(alvo, {
+        theme: "filled_black", size: "large", shape: "pill",
+        text: "continue_with", locale: "pt-BR", width: 270,
+      });
+    };
+    if ((window as any).google?.accounts?.id) {
+      desenhar();
+      return;
+    }
+    let script = document.getElementById("gsi-script") as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
+      script.id = "gsi-script";
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      document.head.appendChild(script);
+    }
+    script.addEventListener("load", desenhar);
+    return () => script?.removeEventListener("load", desenhar);
+  }, []);
+
+  if (Platform.OS !== "web" || !GOOGLE_CLIENT_ID) return null;
+  return (
+    <View style={styles.googleArea}>
+      <View style={styles.ouLinha}>
+        <View style={styles.ouTraco} />
+        <Text style={styles.ouTexto}>ou</Text>
+        <View style={styles.ouTraco} />
+      </View>
+      <View nativeID="botao-google" style={styles.googleBotao} />
+    </View>
+  );
+}
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -63,6 +116,30 @@ export default function LoginScreen() {
     setAlertaVisible(true);
   };
 
+  // Guarda a sessão (login normal e Google respondem no mesmo formato)
+  const salvarSessao = async (data: any) => {
+    if (data.token) await AsyncStorage.setItem("token", data.token);
+    const uid = data.usuario.id.toString();
+    await AsyncStorage.setItem("userId", uid);
+    await AsyncStorage.setItem("userName", data.usuario.nome);
+    await AsyncStorage.setItem("isAdmin", data.usuario.is_admin ? "1" : "0");
+    if (data.usuario.avatar_url) await AsyncStorage.setItem(`avatar_${uid}`, data.usuario.avatar_url);
+    if (data.usuario.posicao) await AsyncStorage.setItem(`posicao_${uid}`, data.usuario.posicao);
+    router.replace("/(tabs)");
+  };
+
+  const entrarComGoogle = async (credential: string) => {
+    setLoading(true);
+    try {
+      const data = await loginGoogle(credential);
+      await salvarSessao(data);
+    } catch (err: any) {
+      mostrarAlerta("Ops", err.response?.data?.erro || "Não consegui entrar com o Google. Tente de novo.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAcessar = async () => {
     setLoading(true);
     try {
@@ -78,14 +155,7 @@ export default function LoginScreen() {
 
         try {
           const data = await loginUser(loginLimpo, password);
-          if (data.token) await AsyncStorage.setItem("token", data.token);
-          const uid = data.usuario.id.toString();
-          await AsyncStorage.setItem("userId", uid);
-          await AsyncStorage.setItem("userName", data.usuario.nome);
-          await AsyncStorage.setItem("isAdmin", data.usuario.is_admin ? "1" : "0");
-          if (data.usuario.avatar_url) await AsyncStorage.setItem(`avatar_${uid}`, data.usuario.avatar_url);
-          if (data.usuario.posicao) await AsyncStorage.setItem(`posicao_${uid}`, data.usuario.posicao);
-          router.replace("/(tabs)");
+          await salvarSessao(data);
         } catch (err: any) {
           const erroMsg = err.response?.data?.erro || "Erro ao fazer login.";
           mostrarAlerta("Acesso Negado", erroMsg);
@@ -314,6 +384,16 @@ export default function LoginScreen() {
                   <Ionicons name="arrow-forward" size={20} color="#FFF" />
                 )}
               </TouchableOpacity>
+
+              <BotaoGoogle onCredential={entrarComGoogle} />
+
+              {/* Assistir não exige conta */}
+              <TouchableOpacity
+                style={styles.semConta}
+                onPress={() => router.replace("/(tabs)")}
+              >
+                <Text style={styles.semContaText}>Só quero ver os lances →</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -392,6 +472,13 @@ const styles = StyleSheet.create({
   toggleButtonActive: { backgroundColor: "#222" },
   toggleText: { color: "#666", fontWeight: "bold", fontSize: 14 },
   toggleTextActive: { color: "#FFF" },
+  googleArea: { marginTop: 18 },
+  ouLinha: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  ouTraco: { flex: 1, height: 1, backgroundColor: "#2A2A2A" },
+  ouTexto: { color: "#666", marginHorizontal: 12, fontSize: 13, fontWeight: "600" },
+  googleBotao: { alignItems: "center", minHeight: 44 },
+  semConta: { marginTop: 18, alignItems: "center", paddingVertical: 6 },
+  semContaText: { color: "#AAA", fontSize: 14, fontWeight: "600", textDecorationLine: "underline" },
   inputsContainer: { gap: 15 },
   inputWrapper: {
     flexDirection: "row",

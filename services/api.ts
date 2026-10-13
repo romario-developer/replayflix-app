@@ -230,6 +230,13 @@ export const loginUser = async (identificador: string, password: string) => {
   return response.data;
 };
 
+// Login com Google: manda o "credential" (ID token) do botão do Google.
+// Conta nova é criada na hora pelo servidor (resposta traz novo: true).
+export const loginGoogle = async (credential: string) => {
+  const response = await axios.post(`${API_URL}/login/google`, { credential });
+  return response.data;
+};
+
 export const cadastrarUser = async (nome: string, username: string, email: string, password: string) => {
   const response = await axios.post(`${API_URL}/cadastrar`, { nome, username, email, password });
   return response.data;

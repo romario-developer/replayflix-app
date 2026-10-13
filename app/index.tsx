@@ -1,6 +1,9 @@
-import { Redirect } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 
 export default function AppIndex() {
-  // Quando o usuário abrir o app, joga ele IMEDIATAMENTE para a tela de Login
-  return <Redirect href="/login" />;
+  // Abre direto no feed — assistir os lances não exige conta. O login só é
+  // pedido na hora de curtir, comentar, baixar ou marcar "É meu!".
+  // Repassa o ?arena= do link do baba pro feed já abrir filtrado.
+  const { arena } = useLocalSearchParams<{ arena?: string }>();
+  return <Redirect href={arena ? { pathname: '/(tabs)', params: { arena } } : '/(tabs)'} />;
 }

@@ -86,8 +86,16 @@ export default function ProfileScreen() {
   const [codigoGerado, setCodigoGerado] = useState<{ username: string; codigo: string } | null>(null);
   const [gerandoCodigo, setGerandoCodigo] = useState(false);
 
+  // null = conferindo; false = visitante (assiste sem conta)
+  const [logado, setLogado] = useState<boolean | null>(null);
+
   useFocusEffect(
     useCallback(() => {
+      AsyncStorage.getItem("userId").then(uid => {
+        setLogado(!!uid);
+        // Abriu o app direto no perfil: tira a tela de abertura (senão espera 20s)
+        if (typeof window !== "undefined" && (window as any).__splashDone) (window as any).__splashDone();
+      });
       carregarPerfil();
       carregarEstatisticas();
     }, [])
@@ -395,6 +403,22 @@ export default function ProfileScreen() {
       <Ionicons name="chevron-forward" size={20} color="#444" />
     </TouchableOpacity>
   );
+
+  if (logado === false) {
+    return (
+      <View style={[styles.pageBackground, styles.visitante]}>
+        <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
+        <Ionicons name="person-circle-outline" size={84} color="#BBB" />
+        <Text style={styles.visitanteTitulo}>Seu perfil de jogador</Text>
+        <Text style={styles.visitanteTexto}>
+          Entre pra guardar seus lances, baixar os vídeos e mostrar sua posição em campo.
+        </Text>
+        <TouchableOpacity style={styles.visitanteBotao} onPress={() => router.push("/login")}>
+          <Text style={styles.visitanteBotaoTexto}>ENTRAR OU CRIAR CONTA</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.pageBackground}>
@@ -861,6 +885,38 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   pageBackground: { flex: 1, backgroundColor: "#F4F4F6" },
+  visitante: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
+  visitanteTitulo: {
+    color: "#111",
+    fontSize: 22,
+    fontWeight: "900",
+    marginTop: 12,
+  },
+  visitanteTexto: {
+    color: "#666",
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 21,
+    marginTop: 8,
+    marginBottom: 24,
+    maxWidth: 340,
+  },
+  visitanteBotao: {
+    backgroundColor: "#D30000",
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+  },
+  visitanteBotaoTexto: {
+    color: "#FFF",
+    fontWeight: "900",
+    fontSize: 15,
+    letterSpacing: 0.5,
+  },
   container: {
     flexGrow: 1,
     backgroundColor: "#F4F4F6",
