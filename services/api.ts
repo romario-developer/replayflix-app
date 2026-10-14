@@ -111,6 +111,23 @@ export type AppConfig = {
   destaque_video_url?: string;
   destaque_titulo?: string;
   destaque_ativo?: string; // "1" | "0"
+  // Transmissão ao vivo (vídeo no YouTube + placar do totem por cima)
+  aovivo_ativo?: string; // "1" | "0"
+  aovivo_url?: string;
+  aovivo_titulo?: string;
+  aovivo_arena_id?: string;
+  aovivo_atraso?: string; // segundos de atraso da transmissão
+};
+
+export type PlacarAoVivo = {
+  ativo: boolean;
+  nomeA?: string;
+  nomeB?: string;
+  golsA?: number;
+  golsB?: number;
+  jogo?: number;
+  timer_estado?: "parado" | "rodando" | "pausado";
+  restante_ms?: number; // negativo = acréscimos
 };
 
 export type PixGerado = {
@@ -417,6 +434,33 @@ export const getConfig = async (): Promise<AppConfig> => {
   } catch (error) {
     return {};
   }
+};
+
+// Placar ao vivo de uma arena (o totem manda; quem assiste consulta)
+export const getPlacar = async (arenaId: string): Promise<PlacarAoVivo> => {
+  try {
+    return (await axios.get(`${API_URL}/placar`, { params: { arena_id: arenaId } })).data;
+  } catch (error) {
+    return { ativo: false };
+  }
+};
+
+// Configura a transmissão ao vivo (só admin)
+export const salvarAoVivo = async (dados: {
+  url: string; titulo: string; arena_id: string; atraso: number; ativo: boolean;
+}): Promise<{ ok: boolean; config?: AppConfig; erro?: string }> => {
+  try {
+    const resp = await axios.post(`${API_URL}/config/aovivo`, dados);
+    return { ok: true, config: resp.data };
+  } catch (error: any) {
+    return { ok: false, erro: error?.response?.data?.erro || "Erro ao salvar a transmissão" };
+  }
+};
+
+// Extrai o id do vídeo de um link do YouTube (watch, youtu.be, live, embed, shorts)
+export const idDoYoutube = (url?: string | null): string | null => {
+  const m = /(?:v=|youtu\.be\/|\/live\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{11})/.exec(url || "");
+  return m ? m[1] : null;
 };
 
 // Salva o vídeo de destaque. videoUri opcional (só troca se enviar um novo).

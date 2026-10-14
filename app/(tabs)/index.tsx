@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeSkeletonLoader from "../../components/SkeletonLoader";
+import AoVivoCard from "../../components/AoVivoCard";
 // import * as ScreenOrientation from "expo-screen-orientation";
 import { Image } from "expo-image";
 import { useAutoRefresh } from "../../hooks/use-auto-refresh";
@@ -650,10 +651,15 @@ export default function HomeScreen() {
     carregarDados();
   }, [carregarDados]);
 
-  // Vídeo de destaque (propaganda no topo do feed)
+  // Config do topo do feed: vídeo de destaque e transmissão ao vivo. Relê a
+  // cada minuto, pra transmissão aparecer/sumir sem recarregar o app.
   useEffect(() => {
-    getConfig().then(setDestaque).catch(() => {});
+    const ler = () => getConfig().then(setDestaque).catch(() => {});
+    ler();
+    const t = setInterval(ler, 60000);
+    return () => clearInterval(t);
   }, []);
+  const aoVivoAtivo = destaque.aovivo_ativo === '1' && !!destaque.aovivo_url;
 
   // Som do feed: começa mudo (regra dos navegadores); o usuário ativa
   // uma vez no alto-falante do vídeo e a escolha fica salva pra sempre.
@@ -1020,7 +1026,16 @@ export default function HomeScreen() {
             keyExtractor={(item) => item.id}
             ListHeaderComponent={
   <>
-    {destaque.destaque_ativo === '1' && !!destaque.destaque_video_url && !selectedArenaId && (
+    {aoVivoAtivo && (!selectedArenaId || selectedArenaId === destaque.aovivo_arena_id) && (
+      <AoVivoCard
+        url={destaque.aovivo_url!}
+        titulo={destaque.aovivo_titulo}
+        arenaId={destaque.aovivo_arena_id}
+        atrasoSeg={parseInt(destaque.aovivo_atraso || '15', 10) || 0}
+      />
+    )}
+    {/* Com transmissão no ar, o destaque sai (dois vídeos tocando juntos não dá) */}
+    {!aoVivoAtivo && destaque.destaque_ativo === '1' && !!destaque.destaque_video_url && !selectedArenaId && (
       <DestaqueCard
         videoUrl={destaque.destaque_video_url}
         titulo={destaque.destaque_titulo}

@@ -532,6 +532,13 @@ export default function ProfileScreen() {
               )}
             {isAdmin &&
               renderMenuItem(
+                "radio",
+                "Transmissão ao Vivo (admin)",
+                "#FF4D4D",
+                () => router.push("/aovivo" as any),
+              )}
+            {isAdmin &&
+              renderMenuItem(
                 "key",
                 "Código de Recuperação (admin)",
                 "#B87DFF",
