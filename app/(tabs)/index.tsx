@@ -8,7 +8,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     Alert,
     FlatList,
-    // Modal,
+    Modal,
+    Pressable,
     Platform,
     RefreshControl,
     ScrollView,
@@ -263,6 +264,52 @@ const InlineVideoPlayer = ({ videoUrl, isActive, soundOn, onToggleSound }: {
         <Ionicons name={soundOn ? "volume-high" : "volume-mute"} size={20} color="#FFF" />
       </TouchableOpacity>
     </View>
+  );
+};
+
+// Convite pra entrar, no visual do app (no lugar do confirm() cinza do
+// navegador). Texto e ícone mudam conforme o que o visitante tentou fazer.
+type AcaoLogin = 'baixar' | 'curtir' | 'comentar' | 'meu';
+
+const CONVITES: Record<AcaoLogin, { icone: keyof typeof Ionicons.glyphMap; titulo: string; texto: string }> = {
+  baixar: { icone: 'download', titulo: 'Baixe esse lance', texto: 'Entre na ReplayFlix pra salvar o lance no seu celular e mandar pra galera.' },
+  curtir: { icone: 'heart', titulo: 'Curta os lances', texto: 'Entre pra curtir e ajudar a escolher os melhores lances do baba.' },
+  comentar: { icone: 'chatbubble-ellipses', titulo: 'Comente o lance', texto: 'Entre pra comentar e resenhar o lance com a galera.' },
+  meu: { icone: 'football', titulo: 'Esse lance é seu?', texto: 'Entre pra guardar esse lance no seu perfil de jogador.' },
+};
+
+const ConviteLogin = ({ acao, onFechar, onEntrar }: {
+  acao: AcaoLogin | null;
+  onFechar: () => void;
+  onEntrar: () => void;
+}) => {
+  const c = acao ? CONVITES[acao] : null;
+  return (
+    <Modal visible={!!c} transparent animationType="fade" onRequestClose={onFechar}>
+      <Pressable style={styles.conviteFundo} onPress={onFechar}>
+        {/* Toque fora do cartão fecha; dentro do cartão, não */}
+        <Pressable style={styles.conviteCartao} onPress={() => {}}>
+          <TouchableOpacity style={styles.conviteFechar} onPress={onFechar} hitSlop={12}>
+            <Ionicons name="close" size={22} color="#777" />
+          </TouchableOpacity>
+          <View style={styles.conviteIcone}>
+            {c && <Ionicons name={c.icone} size={34} color="#FFF" />}
+          </View>
+          <Text style={styles.conviteTitulo}>{c?.titulo}</Text>
+          <Text style={styles.conviteTexto}>{c?.texto}</Text>
+          <TouchableOpacity style={styles.conviteBotao} onPress={onEntrar} activeOpacity={0.85}>
+            <Text style={styles.conviteBotaoTexto}>ENTRAR OU CRIAR CONTA</Text>
+          </TouchableOpacity>
+          <View style={styles.conviteGoogle}>
+            <Ionicons name="logo-google" size={13} color="#888" />
+            <Text style={styles.conviteGoogleTexto}>Dá pra entrar com o Google em 1 toque</Text>
+          </View>
+          <TouchableOpacity onPress={onFechar} style={styles.conviteAgoraNao}>
+            <Text style={styles.conviteAgoraNaoTexto}>Agora não</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 };
 
@@ -702,21 +749,12 @@ export default function HomeScreen() {
   }, [arenaDoLink]);
 
   // Assistir é livre; curtir, comentar, baixar e "É meu!" pedem conta.
-  const pedirLogin = (acao: string) => {
-    const msg = `Entre na sua conta pra ${acao}. É rápido!`;
-    if (Platform.OS === "web") {
-      if (window.confirm(`${msg}\n\nIr pra tela de entrar?`)) router.push("/login");
-    } else {
-      Alert.alert("Entre na ReplayFlix", msg, [
-        { text: "Agora não", style: "cancel" },
-        { text: "Entrar", onPress: () => router.push("/login") },
-      ]);
-    }
-  };
+  const [conviteLogin, setConviteLogin] = useState<AcaoLogin | null>(null);
+  const pedirLogin = (acao: AcaoLogin) => setConviteLogin(acao);
 
   const toggleLike = async (video: ReplayVideo) => {
     if (!userId) {
-      pedirLogin("curtir o lance");
+      pedirLogin("curtir");
       return;
     }
 
@@ -753,7 +791,7 @@ export default function HomeScreen() {
   // "Esse lance é meu!": vincula o lance ao perfil e já favorita
   const reivindicarLance = async (video: ReplayVideo) => {
     if (!userId) {
-      pedirLogin("marcar esse lance como seu");
+      pedirLogin("meu");
       return;
     }
     const resp = await vincularReplay(video.filename, userId);
@@ -818,7 +856,7 @@ export default function HomeScreen() {
   // arquivo como anexo, então o navegador salva sem sair do app.
   const handleDownload = (video: ReplayVideo) => {
     if (!userId) {
-      pedirLogin("baixar o lance");
+      pedirLogin("baixar");
       return;
     }
     const base = video.video_url || `https://yojoumansleqwjwdiyde.supabase.co/storage/v1/object/public/replays/${video.filename}`;
@@ -923,6 +961,17 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
+
+      <ConviteLogin
+        acao={conviteLogin}
+        onFechar={() => setConviteLogin(null)}
+        onEntrar={() => {
+          // Fecha primeiro e navega depois da animação de saída: fazendo os
+          // dois juntos, a navegação se perdia na versão web.
+          setConviteLogin(null);
+          setTimeout(() => router.push('/login'), 250);
+        }}
+      />
 
       {/* Top Header */}
       <View style={styles.header}>
@@ -1127,6 +1176,90 @@ const styles = StyleSheet.create({
   },
   profileBtn: {
     padding: 2,
+  },
+  conviteFundo: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  conviteCartao: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#1A1A1A',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#333',
+    paddingTop: 30,
+    paddingBottom: 14,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+  },
+  conviteFechar: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+  },
+  conviteIcone: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#D30000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: '#D30000',
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  conviteTitulo: {
+    color: '#FFF',
+    fontSize: 21,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  conviteTexto: {
+    color: '#AAA',
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginBottom: 22,
+  },
+  conviteBotao: {
+    backgroundColor: '#D30000',
+    borderRadius: 12,
+    paddingVertical: 14,
+    width: '100%',
+    alignItems: 'center',
+  },
+  conviteBotaoTexto: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  conviteGoogle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 12,
+  },
+  conviteGoogleTexto: {
+    color: '#888',
+    fontSize: 13,
+  },
+  conviteAgoraNao: {
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  conviteAgoraNaoTexto: {
+    color: '#777',
+    fontSize: 14,
+    fontWeight: '600',
   },
   entrarBtn: {
     backgroundColor: '#D30000',
