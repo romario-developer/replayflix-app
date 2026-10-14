@@ -2,6 +2,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/v/:id",
+      "destination": "https://api.replayflix.com.br/v/:id"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*).html",

@@ -30,7 +30,7 @@ import {
 
 
 import { useVideoPlayer, VideoView } from "expo-video";
-import { API_URL, getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, getConfig, ReplayVideo, Comentario, AppConfig, getArenas, Arena } from "../../services/api";
+import { getReplays, likeReplay, unlikeReplay, vincularReplay, getComentarios, postComentario, getConfig, ReplayVideo, Comentario, AppConfig, getArenas, Arena } from "../../services/api";
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 // Endereço do app (pra montar o link do baba). Na web usa o próprio domínio.
@@ -837,16 +837,24 @@ export default function HomeScreen() {
   };
 
   const handleShare = async (video: ReplayVideo) => {
+    // Link curto no domínio do app: replayflix.com.br/v/311293e7. O Vercel
+    // repassa /v/* pro servidor, que monta a página com preview bonito no
+    // WhatsApp + player + botão de baixar. 8 primeiros caracteres do id bastam.
+    const url = `${APP_URL}/v/${String(video.id).slice(0, 8)}`;
+    const titulo = video.titulo || "Lance Oficial ⚽";
+    const message = `${titulo} — olha esse lance na ReplayFlix!\n${url}`;
+    // Navegador de computador geralmente não tem menu de compartilhar
+    if (Platform.OS === "web" && !(navigator as any).share) {
+      try {
+        await navigator.clipboard.writeText(message);
+        window.alert("Link do lance copiado! Cola no grupo.");
+      } catch {
+        window.prompt("Copie o link do lance:", url);
+      }
+      return;
+    }
     try {
-      // Link curto da página de compartilhamento (preview bonito no
-      // WhatsApp + player + botão de baixar), em vez da URL crua do vídeo
-      const base = API_URL.replace(/\/api\/?$/, "");
-      const url = `${base}/v/${video.id}`;
-      const titulo = video.titulo || "Lance Oficial ⚽";
-      await Share.share({
-        message: `${titulo} — olha esse lance na ReplayFlix!\n${url}`,
-        url,
-      });
+      await Share.share({ message, url });
     } catch (error) {
       console.error("Erro ao compartilhar:", error);
     }
